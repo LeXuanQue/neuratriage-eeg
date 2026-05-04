@@ -1,30 +1,60 @@
-# EEG Stroke Research App
+# NeuraTriage EEG — Stroke Early Warning
 
-Local app built around `eeg_stroke_pipeline.py`.
+Hệ thống cảnh báo sớm đột quỵ dựa trên tín hiệu EEG. Repo gồm hai phần độc lập:
 
-## What this app does
+- **`frontend/`** — Giao diện React (mockup + login screen, deploy lên Vercel).
+- **`backend/`** — Pipeline Python (LightGBM + MFDFA + ApEn/FuEn) + Flask app.
+- **`docs/`** — Research notes.
 
-- Runs offline inference on one `.npz` or `.npy` EEG file.
-- Evaluates a saved model on a manifest CSV.
-- Trains a LightGBM model from a manifest CSV.
-- Runs patient-wise cross-validation.
-- Shows the research flow from EEG signal to features to model decision.
+## Cấu trúc
 
-## Research pipeline
+```
+eeg-stroke-app/
+├── frontend/         ← React 18 + Babel standalone (xem frontend/README.md)
+├── backend/          ← Python research pipeline + Flask app
+├── docs/             ← research_guide.md
+├── README.md
+└── vercel.json       ← Vercel config (deploys frontend/ as static site)
+```
+
+---
+
+## Frontend
+
+Xem chi tiết ở [`frontend/README.md`](frontend/README.md).
+
+Mở local:
+
+```bash
+cd frontend
+python -m http.server 8000
+# → http://localhost:8000/
+```
+
+Production: auto-deploy lên Vercel khi push vào `main`.
+
+---
+
+## Backend
+
+Pipeline nghiên cứu Python (`backend/eeg_stroke_pipeline.py`) + Flask app
+(`backend/app.py`).
+
+### Pipeline
 
 ```text
 raw EEG
--> channel ordering and preprocessing
--> 1-second ApEn/FuEn entropy features
--> 4-second MFDFA features
--> SQI quality features
--> LightGBM classifier
--> Optuna/TPE hyperparameter search
--> probability calibration
--> offline inference or realtime alert logic
+→ channel ordering + preprocessing
+→ 1-second ApEn/FuEn entropy features
+→ 4-second MFDFA features
+→ SQI quality features
+→ LightGBM classifier
+→ Optuna/TPE hyperparameter search
+→ probability calibration
+→ offline inference or realtime alert logic
 ```
 
-## Data format
+### Data format
 
 Manifest CSV:
 
@@ -35,57 +65,55 @@ sub-02,ischemic,C:\path\to\sub-02.npz,256
 sub-03,hemorrhagic,C:\path\to\sub-03.npz,256
 ```
 
-Labels:
-
-- `non-stroke`
-- `ischemic`
-- `hemorrhagic`
-- or numeric `0`, `1`, `2`
+Labels: `non-stroke`, `ischemic`, `hemorrhagic` (or numeric `0`, `1`, `2`).
 
 `.npz` file keys:
 
-- `data`: float array, shape `(n_channels, n_samples)`
-- `channels`: channel names
-- `fs`: sampling rate, optional if manifest has `fs`
+- `data` — float array `(n_channels, n_samples)`
+- `channels` — channel names
+- `fs` — sampling rate (optional if manifest có `fs`)
 
-`.npy` file:
+`.npy` file — float array `(n_channels, n_samples)` theo thứ tự kênh mặc định
+trong pipeline.
 
-- float array, shape `(n_channels, n_samples)`
-- assumed to follow the default channel order in the pipeline
+### Chạy backend
 
-## Run
-
-This project has a fresh `.venv`, but the original EEG environment already has
-the scientific dependencies installed. The batch file uses the local `.venv`
-when ready and falls back to `C:\Users\Admin\EEG\.venv`.
+Có sẵn `.venv` tươi; batch file dùng local `.venv` khi sẵn sàng, fallback
+sang `C:\Users\Admin\EEG\.venv` nếu local chưa cài đủ deps.
 
 ```bat
+cd backend
 run_app.bat
 ```
 
-Then open:
+Mở: <http://127.0.0.1:8501>
 
-```text
-http://127.0.0.1:8501
-```
-
-Direct Python command:
+Trực tiếp:
 
 ```bat
-C:\Users\Admin\EEG\.venv\Scripts\python.exe app.py --host 127.0.0.1 --port 8501
+C:\Users\Admin\EEG\.venv\Scripts\python.exe backend\app.py --host 127.0.0.1 --port 8501
 ```
 
-Install dependencies into this app's `.venv` later:
+Cài deps vào `.venv` riêng cho project:
 
 ```bat
-.venv\Scripts\python.exe -m pip install -r requirements.txt
+.venv\Scripts\python.exe -m pip install -r backend\requirements.txt
 ```
 
-## Current demo defaults
+### Smoke-test defaults
 
 - Model: `C:\Users\Admin\EEG\testdata\pipeline_smoke_npz\model_smoke.joblib`
 - Manifest: `C:\Users\Admin\EEG\testdata\pipeline_smoke_npz\manifest.csv`
 - EEG file: `C:\Users\Admin\EEG\testdata\pipeline_smoke_npz\sub-01.npz`
 
-These are smoke-test files. Replace them with real experiment outputs for
-actual study runs.
+Thay bằng output thí nghiệm thực khi chạy nghiên cứu.
+
+---
+
+## Trạng thái
+
+- Frontend là **mockup** với mock auth (lưu `localStorage`). Chưa nối API
+  backend thật — login chỉ lưu role/layout, click "Sign in" cho qua.
+- Backend chạy độc lập trên localhost, chưa expose lên internet.
+- Tích hợp frontend ↔ backend là bước tiếp theo (thay `handleLogin` +
+  fetch các endpoint từ Flask).

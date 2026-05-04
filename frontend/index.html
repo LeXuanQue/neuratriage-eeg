@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NeuraTriage EEG — Stroke Early Warning</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles/tokens.css">
+<style>
+  html, body, #root { height: 100%; }
+  body { background: #0c0e12; }
+</style>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js"></script>
+<script src="lib/i18n.js"></script>
+<script type="text/babel" data-presets="react" src="components/eeg-waveform.jsx"></script>
+<script type="text/babel" data-presets="react" src="components/visualizations.jsx"></script>
+<script type="text/babel" data-presets="react" src="components/app-shell.jsx"></script>
+<script type="text/babel" data-presets="react" src="screens/login-screen.jsx"></script>
+<script type="text/babel" data-presets="react" src="screens/live-monitor-a.jsx"></script>
+<script type="text/babel" data-presets="react" src="screens/live-monitor-b.jsx"></script>
+<script type="text/babel" data-presets="react" src="screens/live-monitor-c.jsx"></script>
+<script type="text/babel" data-presets="react" src="screens/other-screens.jsx"></script>
+<script type="text/babel" data-presets="react" src="screens/device-screen.jsx"></script>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel" data-presets="react">
+const { useState, useMemo } = React;
+window.useM2 = React.useMemo;
+
+const STORAGE_KEY = "neuratriage_auth";
+const LANG_KEY = "neuratriage_lang";
+
+function loadUser() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch (e) {
+    return null;
+  }
+}
+function saveUser(user) {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(user)); } catch (e) {}
+}
+function clearUser() {
+  try { localStorage.removeItem(STORAGE_KEY); } catch (e) {}
+}
+function loadLang() {
+  try { return localStorage.getItem(LANG_KEY) || "vi"; } catch (e) { return "vi"; }
+}
+function saveLang(lang) {
+  try { localStorage.setItem(LANG_KEY, lang); } catch (e) {}
+}
+
+function AppFrame({ variant, lang, channels, mode, defaultScreen, onLang }) {
+  const [active, setActive] = useState(defaultScreen || "live");
+  const t = window.I18N[lang];
+
+  const LiveCmp =
+    variant === "B" ? window.LiveMonitorB :
+    variant === "C" ? window.LiveMonitorC :
+    window.LiveMonitorA;
+
+  let screen;
+  if (active === "live") screen = <LiveCmp mode={mode} channels={channels} />;
+  else if (active === "dashboard") screen = <window.DashboardScreen />;
+  else if (active === "patient") screen = <window.PatientScreen channels={channels} />;
+  else if (active === "alerts") screen = <window.AlertReviewScreen channels={channels} />;
+  else if (active === "device") screen = <window.DeviceScreen />;
+  else if (active === "setup") screen = <window.SetupScreen channels={channels} />;
+  else if (active === "insights") screen = <window.InsightsScreen channels={channels} />;
+  else if (active === "reports") screen = <window.ReportsScreen />;
+  else if (active === "settings") screen = <window.SettingsScreen />;
+
+  return (
+    <window.AppContext.Provider value={{ lang, t }}>
+      <window.AppShell
+        active={active}
+        onNav={setActive}
+        lang={lang}
+        onLang={onLang}
+      >
+        {screen}
+      </window.AppShell>
+    </window.AppContext.Provider>
+  );
+}
+
+function UserPill({ user, lang, onSignOut }) {
+  const t = window.I18N[lang].auth;
+  const roleLabel = (t.roles && t.roles[user.role]) || user.role;
+  return (
+    <div className="user-pill" role="status">
+      <span className="who">
+        {user.email}
+        <small>{roleLabel}</small>
+      </span>
+      <button type="button" className="signout" onClick={onSignOut}>
+        {t.signOut}
+      </button>
+    </div>
+  );
+}
+
+function Root() {
+  const [user, setUser] = useState(loadUser());
+  const [lang, setLangState] = useState(loadLang());
+  const channels19 = useMemo(() => window.pickChannels(19), []);
+
+  function setLang(next) {
+    setLangState(next);
+    saveLang(next);
+  }
+  function handleLogin(userData) {
+    saveUser(userData);
+    setUser(userData);
+  }
+  function handleSignOut() {
+    clearUser();
+    setUser(null);
+  }
+
+  if (!user) {
+    return (
+      <window.LoginScreen
+        onLogin={handleLogin}
+        lang={lang}
+        onLang={setLang}
+      />
+    );
+  }
+
+  return (
+    <React.Fragment>
+      <AppFrame
+        variant={user.variant || "A"}
+        lang={lang}
+        channels={channels19}
+        mode="HS"
+        onLang={setLang}
+      />
+      <UserPill user={user} lang={lang} onSignOut={handleSignOut} />
+    </React.Fragment>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<Root />);
+</script>
+</body>
+</html>

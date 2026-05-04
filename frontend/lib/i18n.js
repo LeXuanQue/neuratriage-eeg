@@ -157,3 +157,50 @@ window.I18N = {
     },
   },
 };
+
+// Auth / login screen strings (appended)
+window.I18N.vi.auth = {
+  signIn: "Đăng nhập",
+  signingIn: "Đang đăng nhập…",
+  email: "Email",
+  password: "Mật khẩu",
+  role: "Vai trò",
+  layout: "Bố cục",
+  demo: "Vào chế độ demo (không cần đăng nhập)",
+  errorRequired: "Vui lòng nhập email và mật khẩu",
+  errorEmail: "Email chưa đúng định dạng",
+  signOut: "Đăng xuất",
+  roles: {
+    clinician: "Bác sĩ lâm sàng",
+    researcher: "Nhà nghiên cứu",
+    admin: "Quản trị viên",
+  },
+  layouts: {
+    A: "A · Split (EEG ↔ Risk)",
+    B: "B · Risk-first",
+    C: "C · Research console",
+  },
+};
+
+window.I18N.en.auth = {
+  signIn: "Sign in",
+  signingIn: "Signing in…",
+  email: "Email",
+  password: "Password",
+  role: "Role",
+  layout: "Layout",
+  demo: "Continue in demo mode (no login)",
+  errorRequired: "Please enter email and password",
+  errorEmail: "Invalid email format",
+  signOut: "Sign out",
+  roles: {
+    clinician: "Clinician",
+    researcher: "Researcher",
+    admin: "Administrator",
+  },
+  layouts: {
+    A: "A · Split (EEG ↔ Risk)",
+    B: "B · Risk-first",
+    C: "C · Research console",
+  },
+};

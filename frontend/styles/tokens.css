@@ -1,0 +1,355 @@
+/* EEG Stroke App — Design Tokens (Clinical Light) */
+:root {
+  /* Type */
+  --font-ui: "Inter", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+
+  /* Neutral surface — cool, slightly tinted */
+  --bg: oklch(0.99 0.003 240);
+  --bg-2: oklch(0.975 0.004 240);
+  --bg-3: oklch(0.955 0.006 240);
+  --line: oklch(0.91 0.008 240);
+  --line-2: oklch(0.86 0.01 240);
+  --ink: oklch(0.22 0.02 250);
+  --ink-2: oklch(0.40 0.02 250);
+  --ink-3: oklch(0.58 0.015 250);
+  --ink-4: oklch(0.72 0.01 250);
+
+  /* Brand */
+  --brand: oklch(0.52 0.15 245);
+  --brand-2: oklch(0.62 0.13 245);
+  --brand-soft: oklch(0.95 0.04 245);
+
+  /* Severity — same chroma/lightness pair */
+  --ns: oklch(0.62 0.14 152);    /* green - no stroke */
+  --ns-soft: oklch(0.95 0.05 152);
+  --is: oklch(0.70 0.15 75);     /* amber - ischemic */
+  --is-soft: oklch(0.96 0.06 80);
+  --hs: oklch(0.58 0.19 25);     /* red  - hemorrhagic */
+  --hs-soft: oklch(0.95 0.05 25);
+
+  /* trace colors for waveforms (channel cycle) */
+  --trace: oklch(0.45 0.04 250);
+
+  /* Shadows */
+  --shadow-1: 0 1px 0 oklch(0.92 0.01 240);
+  --shadow-2: 0 1px 2px oklch(0.85 0.01 240 / 0.5), 0 0 0 1px var(--line);
+
+  --r-1: 4px;
+  --r-2: 8px;
+  --r-3: 12px;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  font-family: var(--font-ui);
+  color: var(--ink);
+  background: var(--bg);
+  font-feature-settings: "ss01", "cv11";
+  -webkit-font-smoothing: antialiased;
+}
+
+.mono { font-family: var(--font-mono); font-feature-settings: "tnum", "zero"; }
+
+/* common bits */
+.panel {
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--r-2);
+}
+.panel-header {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  font-weight: 500;
+}
+.kbd {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  padding: 2px 5px;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  color: var(--ink-2);
+  background: var(--bg-2);
+}
+.btn {
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 500;
+  padding: 7px 12px;
+  border-radius: var(--r-1);
+  border: 1px solid var(--line-2);
+  background: var(--bg);
+  color: var(--ink);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.btn:hover { background: var(--bg-2); }
+.btn-primary {
+  background: var(--ink);
+  color: var(--bg);
+  border-color: var(--ink);
+}
+.btn-primary:hover { background: var(--ink-2); }
+.btn-ghost { border-color: transparent; }
+.btn-ghost:hover { background: var(--bg-2); border-color: var(--line); }
+
+.tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 7px;
+  font-size: 11px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  color: var(--ink-2);
+}
+.dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; }
+.dot.ns { background: var(--ns); }
+.dot.is { background: var(--is); }
+.dot.hs { background: var(--hs); }
+.dot.live { background: var(--hs); animation: pulse 1.4s ease-in-out infinite; }
+@keyframes pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(1.4); }
+}
+
+/* ============================================================
+   Login screen
+   ============================================================ */
+.login-page {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  font-family: var(--font-ui);
+  color: oklch(0.95 0.005 250);
+  background:
+    radial-gradient(ellipse 60% 50% at 25% 20%, oklch(0.32 0.1 250 / 0.35), transparent 60%),
+    radial-gradient(ellipse 50% 60% at 80% 85%, oklch(0.28 0.12 280 / 0.3), transparent 60%),
+    linear-gradient(180deg, #0c0e12 0%, #0a0c10 100%);
+}
+.login-bg-grid {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(oklch(1 0 0 / 0.025) 1px, transparent 1px),
+    linear-gradient(90deg, oklch(1 0 0 / 0.025) 1px, transparent 1px);
+  background-size: 48px 48px;
+  -webkit-mask-image: radial-gradient(ellipse 80% 80% at 50% 50%, black 30%, transparent 80%);
+          mask-image: radial-gradient(ellipse 80% 80% at 50% 50%, black 30%, transparent 80%);
+  pointer-events: none;
+}
+.login-waves {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  opacity: 0.4;
+}
+.login-waves path {
+  fill: none;
+  stroke-width: 1.4;
+}
+.login-waves .wave-1 { stroke: oklch(0.62 0.13 245); animation: waveMove 14s ease-in-out infinite; }
+.login-waves .wave-2 { stroke: oklch(0.55 0.12 220); animation: waveMove 20s ease-in-out infinite reverse; opacity: 0.6; }
+.login-waves .wave-3 { stroke: oklch(0.7 0.1 270); animation: waveMove 17s ease-in-out infinite; opacity: 0.4; }
+@keyframes waveMove {
+  0%, 100% { transform: translateX(-3%) translateY(0); }
+  50%      { transform: translateX(3%) translateY(-8px); }
+}
+
+.login-card {
+  position: relative;
+  z-index: 10;
+  width: min(440px, 92vw);
+  padding: 32px 30px;
+  border-radius: 16px;
+  background: oklch(0.18 0.012 250 / 0.72);
+  -webkit-backdrop-filter: blur(24px) saturate(160%);
+          backdrop-filter: blur(24px) saturate(160%);
+  border: 1px solid oklch(1 0 0 / 0.08);
+  box-shadow:
+    0 24px 60px -12px oklch(0 0 0 / 0.55),
+    inset 0 0 0 1px oklch(1 0 0 / 0.04);
+}
+.login-brand {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  margin-bottom: 26px;
+}
+.login-logo {
+  width: 46px;
+  height: 46px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  background: linear-gradient(135deg, var(--brand), oklch(0.4 0.18 270));
+  color: white;
+  box-shadow: 0 8px 18px -6px oklch(0.5 0.15 245 / 0.55);
+}
+.login-title h1 {
+  font-size: 18px;
+  font-weight: 600;
+  margin: 0;
+  letter-spacing: -0.01em;
+}
+.login-title p {
+  font-size: 12px;
+  margin: 3px 0 0;
+  color: oklch(0.7 0.01 250);
+}
+.login-card form {
+  display: grid;
+  gap: 14px;
+}
+.login-field {
+  display: grid;
+  gap: 6px;
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: oklch(0.62 0.012 250);
+  font-weight: 500;
+}
+.login-card input,
+.login-card select {
+  font-family: inherit;
+  font-size: 14px;
+  padding: 11px 13px;
+  background: oklch(0.13 0.01 250 / 0.6);
+  border: 1px solid oklch(1 0 0 / 0.08);
+  border-radius: 8px;
+  color: oklch(0.95 0.005 250);
+  text-transform: none;
+  letter-spacing: normal;
+  outline: none;
+  transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
+}
+.login-card input:focus,
+.login-card select:focus {
+  border-color: var(--brand-2);
+  background: oklch(0.16 0.012 250 / 0.7);
+  box-shadow: 0 0 0 3px oklch(0.5 0.15 245 / 0.18);
+}
+.login-card input::placeholder {
+  color: oklch(0.45 0.01 250);
+}
+.login-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.login-error {
+  font-size: 12.5px;
+  color: oklch(0.78 0.16 25);
+  background: oklch(0.25 0.08 25 / 0.28);
+  border: 1px solid oklch(0.5 0.15 25 / 0.4);
+  padding: 9px 12px;
+  border-radius: 6px;
+  text-transform: none;
+  letter-spacing: normal;
+}
+.login-submit {
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  padding: 12px;
+  background: linear-gradient(135deg, var(--brand), oklch(0.45 0.16 260));
+  color: white;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  letter-spacing: 0.01em;
+  transition: transform 0.1s, box-shadow 0.15s;
+  box-shadow: 0 4px 14px -3px oklch(0.5 0.15 245 / 0.45);
+}
+.login-submit:hover { transform: translateY(-1px); box-shadow: 0 8px 20px -4px oklch(0.5 0.15 245 / 0.55); }
+.login-submit:active { transform: translateY(0); }
+.login-submit:disabled { opacity: 0.6; cursor: wait; transform: none; }
+.login-demo {
+  font-family: inherit;
+  font-size: 12.5px;
+  padding: 9px;
+  background: transparent;
+  color: oklch(0.7 0.04 250);
+  border: 1px dashed oklch(1 0 0 / 0.14);
+  border-radius: 8px;
+  cursor: pointer;
+  margin-top: -4px;
+}
+.login-demo:hover {
+  color: oklch(0.88 0.04 250);
+  border-color: oklch(1 0 0 / 0.22);
+  background: oklch(1 0 0 / 0.025);
+}
+.login-footer {
+  margin-top: 22px;
+  padding-top: 18px;
+  border-top: 1px solid oklch(1 0 0 / 0.06);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 11px;
+  color: oklch(0.55 0.01 250);
+}
+.lang-toggle {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  background: oklch(1 0 0 / 0.06);
+  color: oklch(0.85 0.005 250);
+  border: 1px solid oklch(1 0 0 / 0.08);
+  padding: 5px 11px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.lang-toggle:hover { background: oklch(1 0 0 / 0.1); }
+.login-footer .version { font-family: var(--font-mono); }
+
+/* ============================================================
+   Floating user pill (top-right) — shown when logged in
+   ============================================================ */
+.user-pill {
+  position: fixed;
+  top: 12px;
+  right: 14px;
+  z-index: 50;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 6px 5px 11px;
+  background: oklch(0.99 0.003 240);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  box-shadow: var(--shadow-2);
+  font-size: 12px;
+  color: var(--ink-2);
+}
+.user-pill .who { font-weight: 500; color: var(--ink); }
+.user-pill .who small { font-weight: 400; color: var(--ink-3); margin-left: 6px; }
+.user-pill .signout {
+  font-family: inherit;
+  font-size: 11px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  color: var(--ink-2);
+  cursor: pointer;
+}
+.user-pill .signout:hover { background: var(--bg-3); color: var(--ink); }
