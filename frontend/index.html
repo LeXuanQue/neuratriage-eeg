@@ -2,29 +2,30 @@
 <html lang="vi">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>NeuraTriage EEG — Stroke Early Warning</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="stylesheet" href="styles/tokens.css">
 <style>
   html, body, #root { height: 100%; }
   body { background: #0c0e12; }
 </style>
-<script src="https://unpkg.com/react@18.3.1/umd/react.development.js"></script>
-<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js"></script>
-<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js"></script>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
 <script src="lib/i18n.js"></script>
+<script type="text/babel" data-presets="react" src="components/design-canvas.jsx"></script>
 <script type="text/babel" data-presets="react" src="components/eeg-waveform.jsx"></script>
 <script type="text/babel" data-presets="react" src="components/visualizations.jsx"></script>
 <script type="text/babel" data-presets="react" src="components/app-shell.jsx"></script>
-<script type="text/babel" data-presets="react" src="screens/login-screen.jsx"></script>
 <script type="text/babel" data-presets="react" src="screens/live-monitor-a.jsx"></script>
 <script type="text/babel" data-presets="react" src="screens/live-monitor-b.jsx"></script>
 <script type="text/babel" data-presets="react" src="screens/live-monitor-c.jsx"></script>
 <script type="text/babel" data-presets="react" src="screens/other-screens.jsx"></script>
 <script type="text/babel" data-presets="react" src="screens/device-screen.jsx"></script>
+<script type="text/babel" data-presets="react" src="screens/login-screen.jsx"></script>
 </head>
 <body>
 <div id="root"></div>
@@ -33,38 +34,14 @@
 const { useState, useMemo } = React;
 window.useM2 = React.useMemo;
 
-const STORAGE_KEY = "neuratriage_auth";
-const LANG_KEY = "neuratriage_lang";
+function AppFrame({variant, lang, channels, mode, defaultScreen = "live"}) {
+  const [active, setActive] = useState(defaultScreen);
+  const [curLang, setLang] = useState(lang);
+  const t = window.I18N[curLang];
 
-function loadUser() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? JSON.parse(raw) : null;
-  } catch (e) {
-    return null;
-  }
-}
-function saveUser(user) {
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(user)); } catch (e) {}
-}
-function clearUser() {
-  try { localStorage.removeItem(STORAGE_KEY); } catch (e) {}
-}
-function loadLang() {
-  try { return localStorage.getItem(LANG_KEY) || "vi"; } catch (e) { return "vi"; }
-}
-function saveLang(lang) {
-  try { localStorage.setItem(LANG_KEY, lang); } catch (e) {}
-}
-
-function AppFrame({ variant, lang, channels, mode, defaultScreen, onLang }) {
-  const [active, setActive] = useState(defaultScreen || "live");
-  const t = window.I18N[lang];
-
-  const LiveCmp =
-    variant === "B" ? window.LiveMonitorB :
-    variant === "C" ? window.LiveMonitorC :
-    window.LiveMonitorA;
+  const LiveCmp = variant === "B" ? window.LiveMonitorB
+                : variant === "C" ? window.LiveMonitorC
+                : window.LiveMonitorA;
 
   let screen;
   if (active === "live") screen = <LiveCmp mode={mode} channels={channels} />;
@@ -78,74 +55,81 @@ function AppFrame({ variant, lang, channels, mode, defaultScreen, onLang }) {
   else if (active === "settings") screen = <window.SettingsScreen />;
 
   return (
-    <window.AppContext.Provider value={{ lang, t }}>
-      <window.AppShell
-        active={active}
-        onNav={setActive}
-        lang={lang}
-        onLang={onLang}
-      >
+    <window.AppContext.Provider value={{lang: curLang, t}}>
+      <window.AppShell active={active} onNav={setActive} lang={curLang} onLang={setLang}>
         {screen}
       </window.AppShell>
     </window.AppContext.Provider>
   );
 }
 
-function UserPill({ user, lang, onSignOut }) {
-  const t = window.I18N[lang].auth;
-  const roleLabel = (t.roles && t.roles[user.role]) || user.role;
-  return (
-    <div className="user-pill" role="status">
-      <span className="who">
-        {user.email}
-        <small>{roleLabel}</small>
-      </span>
-      <button type="button" className="signout" onClick={onSignOut}>
-        {t.signOut}
-      </button>
-    </div>
-  );
-}
-
 function Root() {
-  const [user, setUser] = useState(loadUser());
-  const [lang, setLangState] = useState(loadLang());
-  const channels19 = useMemo(() => window.pickChannels(19), []);
-
-  function setLang(next) {
-    setLangState(next);
-    saveLang(next);
-  }
-  function handleLogin(userData) {
-    saveUser(userData);
-    setUser(userData);
-  }
-  function handleSignOut() {
-    clearUser();
-    setUser(null);
-  }
-
-  if (!user) {
-    return (
-      <window.LoginScreen
-        onLogin={handleLogin}
-        lang={lang}
-        onLang={setLang}
-      />
-    );
-  }
-
+  const channels19 = window.pickChannels(19);
   return (
-    <React.Fragment>
-      <AppFrame
-        variant={user.variant || "A"}
-        lang={lang}
-        channels={channels19}
-        mode="HS"
-        onLang={setLang}
-      />
-      <UserPill user={user} lang={lang} onSignOut={handleSignOut} />
-    </React.Fragment>
+    <window.DesignCanvas defaultZoom={0.62} background="#0c0e12">
+      <window.DCSection id="auth" title="Đăng nhập & màn hình chờ khởi tạo">
+        <window.DCArtboard id="login-vi" label="Đăng nhập · Tiếng Việt" width={1480} height={920}>
+          <window.LoginScreen lang="vi" state="login" />
+        </window.DCArtboard>
+        <window.DCArtboard id="splash" label="Màn hình chờ · khởi tạo phiên" width={1480} height={920}>
+          <window.LoginScreen lang="vi" state="splash" />
+        </window.DCArtboard>
+        <window.DCArtboard id="login-en" label="Sign in · English" width={1480} height={920}>
+          <window.LoginScreen lang="en" state="login" />
+        </window.DCArtboard>
+      </window.DCSection>
+
+      <window.DCSection id="hero" title="Live Monitor — 3 hero variants (HS alert in progress)">
+        <window.DCArtboard id="A" label="A · Split layout (split EEG ↔ risk panel)" width={1480} height={920}>
+          <AppFrame variant="A" lang="vi" channels={channels19} mode="HS" />
+        </window.DCArtboard>
+        <window.DCArtboard id="B" label="B · Risk-first hero (alert at top, EEG below)" width={1480} height={920}>
+          <AppFrame variant="B" lang="vi" channels={channels19} mode="HS" />
+        </window.DCArtboard>
+        <window.DCArtboard id="C" label="C · Research console (3-col, MFDFA + metrics)" width={1480} height={920}>
+          <AppFrame variant="C" lang="vi" channels={channels19} mode="HS" />
+        </window.DCArtboard>
+      </window.DCSection>
+
+      <window.DCSection id="states" title="Live Monitor — class & language states (variant A)">
+        <window.DCArtboard id="A-NS" label="A · No stroke (NS)" width={1480} height={920}>
+          <AppFrame variant="A" lang="vi" channels={channels19} mode="NS" />
+        </window.DCArtboard>
+        <window.DCArtboard id="A-IS" label="A · Ischemic (IS)" width={1480} height={920}>
+          <AppFrame variant="A" lang="vi" channels={channels19} mode="IS" />
+        </window.DCArtboard>
+        <window.DCArtboard id="A-EN" label="A · English UI · HS" width={1480} height={920}>
+          <AppFrame variant="A" lang="en" channels={channels19} mode="HS" />
+        </window.DCArtboard>
+      </window.DCSection>
+
+      <window.DCSection id="screens" title="Other screens (using variant A shell)">
+        <window.DCArtboard id="dashboard" label="Dashboard" width={1480} height={920}>
+          <AppFrame variant="A" lang="vi" channels={channels19} mode="HS" defaultScreen="dashboard" />
+        </window.DCArtboard>
+        <window.DCArtboard id="patient" label="Patient detail" width={1480} height={920}>
+          <AppFrame variant="A" lang="vi" channels={channels19} mode="HS" defaultScreen="patient" />
+        </window.DCArtboard>
+        <window.DCArtboard id="alerts" label="Alert review (with feature importance)" width={1480} height={920}>
+          <AppFrame variant="A" lang="vi" channels={channels19} mode="HS" defaultScreen="alerts" />
+        </window.DCArtboard>
+        <window.DCArtboard id="device" label="Device connection · scan + stream health" width={1480} height={920}>
+          <AppFrame variant="A" lang="vi" channels={channels19} mode="HS" defaultScreen="device" />
+        </window.DCArtboard>
+        <window.DCArtboard id="setup" label="Session setup · channel impedance" width={1480} height={920}>
+          <AppFrame variant="A" lang="vi" channels={channels19} mode="NS" defaultScreen="setup" />
+        </window.DCArtboard>
+        <window.DCArtboard id="insights" label="Model insights · MFDFA, calibration, confusion" width={1480} height={920}>
+          <AppFrame variant="A" lang="en" channels={channels19} mode="HS" defaultScreen="insights" />
+        </window.DCArtboard>
+        <window.DCArtboard id="reports" label="Reports" width={1480} height={920}>
+          <AppFrame variant="A" lang="vi" channels={channels19} mode="HS" defaultScreen="reports" />
+        </window.DCArtboard>
+        <window.DCArtboard id="settings" label="Settings · alert policy" width={1480} height={920}>
+          <AppFrame variant="A" lang="vi" channels={channels19} mode="HS" defaultScreen="settings" />
+        </window.DCArtboard>
+      </window.DCSection>
+    </window.DesignCanvas>
   );
 }
 
