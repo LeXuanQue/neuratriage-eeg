@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<title>NeuraTriage EEG — Stroke Early Warning</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="tokens.css">
+<style>
+  html, body, #root { height: 100%; }
+  body { background: #0c0e12; }
+</style>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js"></script>
+<script src="i18n.js"></script>
+<script type="text/babel" data-presets="react" src="design-canvas.jsx"></script>
+<script type="text/babel" data-presets="react" src="eeg-waveform.jsx"></script>
+<script type="text/babel" data-presets="react" src="visualizations.jsx"></script>
+<script type="text/babel" data-presets="react" src="app-shell.jsx"></script>
+<script type="text/babel" data-presets="react" src="screens/live-monitor-a.jsx"></script>
+<script type="text/babel" data-presets="react" src="screens/live-monitor-b.jsx"></script>
+<script type="text/babel" data-presets="react" src="screens/live-monitor-c.jsx"></script>
+<script type="text/babel" data-presets="react" src="screens/other-screens.jsx"></script>
+<script type="text/babel" data-presets="react" src="screens/device-screen.jsx"></script>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel" data-presets="react">
+const { useState, useMemo } = React;
+window.useM2 = React.useMemo;
+
+function AppFrame({variant, lang, channels, mode, defaultScreen = "live"}) {
+  const [active, setActive] = useState(defaultScreen);
+  const [curLang, setLang] = useState(lang);
+  const t = window.I18N[curLang];
+
+  const LiveCmp = variant === "B" ? window.LiveMonitorB
+                : variant === "C" ? window.LiveMonitorC
+                : window.LiveMonitorA;
+
+  let screen;
+  if (active === "live") screen = <LiveCmp mode={mode} channels={channels} />;
+  else if (active === "dashboard") screen = <window.DashboardScreen />;
+  else if (active === "patient") screen = <window.PatientScreen channels={channels} />;
+  else if (active === "alerts") screen = <window.AlertReviewScreen channels={channels} />;
+  else if (active === "device") screen = <window.DeviceScreen />;
+  else if (active === "setup") screen = <window.SetupScreen channels={channels} />;
+  else if (active === "insights") screen = <window.InsightsScreen channels={channels} />;
+  else if (active === "reports") screen = <window.ReportsScreen />;
+  else if (active === "settings") screen = <window.SettingsScreen />;
+
+  return (
+    <window.AppContext.Provider value={{lang: curLang, t}}>
+      <window.AppShell active={active} onNav={setActive} lang={curLang} onLang={setLang}>
+        {screen}
+      </window.AppShell>
+    </window.AppContext.Provider>
+  );
+}
+
+function Root() {
+  const channels19 = window.pickChannels(19);
+  return (
+    <window.DesignCanvas defaultZoom={0.62} background="#0c0e12">
+      <window.DCSection id="hero" title="Live Monitor — 3 hero variants (HS alert in progress)">
+        <window.DCArtboard id="A" label="A · Split layout (split EEG ↔ risk panel)" width={1480} height={920}>
+          <AppFrame variant="A" lang="vi" channels={channels19} mode="HS" />
+        </window.DCArtboard>
+        <window.DCArtboard id="B" label="B · Risk-first hero (alert at top, EEG below)" width={1480} height={920}>
+          <AppFrame variant="B" lang="vi" channels={channels19} mode="HS" />
+        </window.DCArtboard>
+        <window.DCArtboard id="C" label="C · Research console (3-col, MFDFA + metrics)" width={1480} height={920}>
+          <AppFrame variant="C" lang="vi" channels={channels19} mode="HS" />
+        </window.DCArtboard>
+      </window.DCSection>
+
+      <window.DCSection id="states" title="Live Monitor — class & language states (variant A)">
+        <window.DCArtboard id="A-NS" label="A · No stroke (NS)" width={1480} height={920}>
+          <AppFrame variant="A" lang="vi" channels={channels19} mode="NS" />
+        </window.DCArtboard>
+        <window.DCArtboard id="A-IS" label="A · Ischemic (IS)" width={1480} height={920}>
+          <AppFrame variant="A" lang="vi" channels={channels19} mode="IS" />
+        </window.DCArtboard>
+        <window.DCArtboard id="A-EN" label="A · English UI · HS" width={1480} height={920}>
+          <AppFrame variant="A" lang="en" channels={channels19} mode="HS" />
+        </window.DCArtboard>
+      </window.DCSection>
+
+      <window.DCSection id="screens" title="Other screens (using variant A shell)">
+        <window.DCArtboard id="dashboard" label="Dashboard" width={1480} height={920}>
+          <AppFrame variant="A" lang="vi" channels={channels19} mode="HS" defaultScreen="dashboard" />
+        </window.DCArtboard>
+        <window.DCArtboard id="patient" label="Patient detail" width={1480} height={920}>
+          <AppFrame variant="A" lang="vi" channels={channels19} mode="HS" defaultScreen="patient" />
+        </window.DCArtboard>
+        <window.DCArtboard id="alerts" label="Alert review (with feature importance)" width={1480} height={920}>
+          <AppFrame variant="A" lang="vi" channels={channels19} mode="HS" defaultScreen="alerts" />
+        </window.DCArtboard>
+        <window.DCArtboard id="device" label="Device connection · scan + stream health" width={1480} height={920}>
+          <AppFrame variant="A" lang="vi" channels={channels19} mode="HS" defaultScreen="device" />
+        </window.DCArtboard>
+        <window.DCArtboard id="setup" label="Session setup · channel impedance" width={1480} height={920}>
+          <AppFrame variant="A" lang="vi" channels={channels19} mode="NS" defaultScreen="setup" />
+        </window.DCArtboard>
+        <window.DCArtboard id="insights" label="Model insights · MFDFA, calibration, confusion" width={1480} height={920}>
+          <AppFrame variant="A" lang="en" channels={channels19} mode="HS" defaultScreen="insights" />
+        </window.DCArtboard>
+        <window.DCArtboard id="reports" label="Reports" width={1480} height={920}>
+          <AppFrame variant="A" lang="vi" channels={channels19} mode="HS" defaultScreen="reports" />
+        </window.DCArtboard>
+        <window.DCArtboard id="settings" label="Settings · alert policy" width={1480} height={920}>
+          <AppFrame variant="A" lang="vi" channels={channels19} mode="HS" defaultScreen="settings" />
+        </window.DCArtboard>
+      </window.DCSection>
+    </window.DesignCanvas>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<Root />);
+</script>
+</body>
+</html>
