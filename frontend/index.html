@@ -34,10 +34,24 @@
 const { useState, useMemo } = React;
 window.useM2 = React.useMemo;
 
-function AppFrame({variant, lang, channels, mode, defaultScreen = "live"}) {
+const STORAGE_KEY = "neuratriage_auth";
+const LANG_KEY = "neuratriage_lang";
+const MODE_KEY = "neuratriage_mode";
+
+function loadUser() {
+  try { const r = localStorage.getItem(STORAGE_KEY); return r ? JSON.parse(r) : null; }
+  catch (e) { return null; }
+}
+function saveUser(u) { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(u)); } catch (e) {} }
+function clearUser() { try { localStorage.removeItem(STORAGE_KEY); } catch (e) {} }
+function loadLang() { try { return localStorage.getItem(LANG_KEY) || "vi"; } catch (e) { return "vi"; } }
+function saveLang(l) { try { localStorage.setItem(LANG_KEY, l); } catch (e) {} }
+function loadMode() { try { return localStorage.getItem(MODE_KEY) || "HS"; } catch (e) { return "HS"; } }
+function saveMode(m) { try { localStorage.setItem(MODE_KEY, m); } catch (e) {} }
+
+function AppFrame({variant, lang, channels, mode, defaultScreen = "live", onLang}) {
   const [active, setActive] = useState(defaultScreen);
-  const [curLang, setLang] = useState(lang);
-  const t = window.I18N[curLang];
+  const t = window.I18N[lang];
 
   const LiveCmp = variant === "B" ? window.LiveMonitorB
                 : variant === "C" ? window.LiveMonitorC
@@ -55,81 +69,95 @@ function AppFrame({variant, lang, channels, mode, defaultScreen = "live"}) {
   else if (active === "settings") screen = <window.SettingsScreen />;
 
   return (
-    <window.AppContext.Provider value={{lang: curLang, t}}>
-      <window.AppShell active={active} onNav={setActive} lang={curLang} onLang={setLang}>
+    <window.AppContext.Provider value={{lang, t}}>
+      <window.AppShell active={active} onNav={setActive} lang={lang} onLang={onLang}>
         {screen}
       </window.AppShell>
     </window.AppContext.Provider>
   );
 }
 
-function Root() {
-  const channels19 = window.pickChannels(19);
+function DemoControls({variant, mode, lang, onVariant, onMode, onSignOut}) {
+  const labels = lang === "vi"
+    ? {layout: "Bố cục", mode: "Tình huống", out: "Đăng xuất"}
+    : {layout: "Layout", mode: "Scenario", out: "Sign out"};
+  const cellStyle = {
+    padding: "5px 9px", borderRadius: 6, border: "1px solid var(--line)",
+    background: "var(--bg)", fontSize: 11, cursor: "pointer", color: "var(--ink-2)",
+    fontFamily: "inherit",
+  };
+  const activeCell = {...cellStyle, background: "var(--ink)", color: "var(--bg)", borderColor: "var(--ink)"};
   return (
-    <window.DesignCanvas defaultZoom={0.62} background="#0c0e12">
-      <window.DCSection id="auth" title="Đăng nhập & màn hình chờ khởi tạo">
-        <window.DCArtboard id="login-vi" label="Đăng nhập · Tiếng Việt" width={1480} height={920}>
-          <window.LoginScreen lang="vi" state="login" />
-        </window.DCArtboard>
-        <window.DCArtboard id="splash" label="Màn hình chờ · khởi tạo phiên" width={1480} height={920}>
-          <window.LoginScreen lang="vi" state="splash" />
-        </window.DCArtboard>
-        <window.DCArtboard id="login-en" label="Sign in · English" width={1480} height={920}>
-          <window.LoginScreen lang="en" state="login" />
-        </window.DCArtboard>
-      </window.DCSection>
+    <div style={{
+      position: "fixed", top: 12, right: 14, zIndex: 50,
+      display: "flex", alignItems: "center", gap: 10, padding: "6px 8px",
+      background: "var(--bg)", border: "1px solid var(--line)",
+      borderRadius: 999, boxShadow: "var(--shadow-2)", fontSize: 11,
+    }}>
+      <span style={{color: "var(--ink-3)", letterSpacing: "0.06em", textTransform: "uppercase", marginLeft: 4}}>
+        {labels.layout}
+      </span>
+      {["A", "B", "C"].map(v => (
+        <button key={v} style={v === variant ? activeCell : cellStyle} onClick={() => onVariant(v)}>{v}</button>
+      ))}
+      <span style={{width: 1, height: 16, background: "var(--line)"}}/>
+      <span style={{color: "var(--ink-3)", letterSpacing: "0.06em", textTransform: "uppercase"}}>
+        {labels.mode}
+      </span>
+      {["NS", "IS", "HS"].map(m => (
+        <button key={m} style={m === mode ? activeCell : cellStyle} onClick={() => onMode(m)}>{m}</button>
+      ))}
+      <span style={{width: 1, height: 16, background: "var(--line)"}}/>
+      <button style={cellStyle} onClick={onSignOut}>{labels.out}</button>
+    </div>
+  );
+}
 
-      <window.DCSection id="hero" title="Live Monitor — 3 hero variants (HS alert in progress)">
-        <window.DCArtboard id="A" label="A · Split layout (split EEG ↔ risk panel)" width={1480} height={920}>
-          <AppFrame variant="A" lang="vi" channels={channels19} mode="HS" />
-        </window.DCArtboard>
-        <window.DCArtboard id="B" label="B · Risk-first hero (alert at top, EEG below)" width={1480} height={920}>
-          <AppFrame variant="B" lang="vi" channels={channels19} mode="HS" />
-        </window.DCArtboard>
-        <window.DCArtboard id="C" label="C · Research console (3-col, MFDFA + metrics)" width={1480} height={920}>
-          <AppFrame variant="C" lang="vi" channels={channels19} mode="HS" />
-        </window.DCArtboard>
-      </window.DCSection>
+function Root() {
+  const [user, setUserState] = useState(loadUser());
+  const [lang, setLangState] = useState(loadLang());
+  const [mode, setModeState] = useState(loadMode());
+  const channels19 = useMemo(() => window.pickChannels(19), []);
 
-      <window.DCSection id="states" title="Live Monitor — class & language states (variant A)">
-        <window.DCArtboard id="A-NS" label="A · No stroke (NS)" width={1480} height={920}>
-          <AppFrame variant="A" lang="vi" channels={channels19} mode="NS" />
-        </window.DCArtboard>
-        <window.DCArtboard id="A-IS" label="A · Ischemic (IS)" width={1480} height={920}>
-          <AppFrame variant="A" lang="vi" channels={channels19} mode="IS" />
-        </window.DCArtboard>
-        <window.DCArtboard id="A-EN" label="A · English UI · HS" width={1480} height={920}>
-          <AppFrame variant="A" lang="en" channels={channels19} mode="HS" />
-        </window.DCArtboard>
-      </window.DCSection>
+  function setLang(next) { setLangState(next); saveLang(next); }
+  function setMode(next) { setModeState(next); saveMode(next); }
+  function setVariant(next) {
+    if (!user) return;
+    const updated = {...user, variant: next};
+    setUserState(updated);
+    saveUser(updated);
+  }
+  function handleLogin(u) { saveUser(u); setUserState(u); }
+  function handleSignOut() { clearUser(); setUserState(null); }
 
-      <window.DCSection id="screens" title="Other screens (using variant A shell)">
-        <window.DCArtboard id="dashboard" label="Dashboard" width={1480} height={920}>
-          <AppFrame variant="A" lang="vi" channels={channels19} mode="HS" defaultScreen="dashboard" />
-        </window.DCArtboard>
-        <window.DCArtboard id="patient" label="Patient detail" width={1480} height={920}>
-          <AppFrame variant="A" lang="vi" channels={channels19} mode="HS" defaultScreen="patient" />
-        </window.DCArtboard>
-        <window.DCArtboard id="alerts" label="Alert review (with feature importance)" width={1480} height={920}>
-          <AppFrame variant="A" lang="vi" channels={channels19} mode="HS" defaultScreen="alerts" />
-        </window.DCArtboard>
-        <window.DCArtboard id="device" label="Device connection · scan + stream health" width={1480} height={920}>
-          <AppFrame variant="A" lang="vi" channels={channels19} mode="HS" defaultScreen="device" />
-        </window.DCArtboard>
-        <window.DCArtboard id="setup" label="Session setup · channel impedance" width={1480} height={920}>
-          <AppFrame variant="A" lang="vi" channels={channels19} mode="NS" defaultScreen="setup" />
-        </window.DCArtboard>
-        <window.DCArtboard id="insights" label="Model insights · MFDFA, calibration, confusion" width={1480} height={920}>
-          <AppFrame variant="A" lang="en" channels={channels19} mode="HS" defaultScreen="insights" />
-        </window.DCArtboard>
-        <window.DCArtboard id="reports" label="Reports" width={1480} height={920}>
-          <AppFrame variant="A" lang="vi" channels={channels19} mode="HS" defaultScreen="reports" />
-        </window.DCArtboard>
-        <window.DCArtboard id="settings" label="Settings · alert policy" width={1480} height={920}>
-          <AppFrame variant="A" lang="vi" channels={channels19} mode="HS" defaultScreen="settings" />
-        </window.DCArtboard>
-      </window.DCSection>
-    </window.DesignCanvas>
+  if (!user) {
+    return (
+      <window.LoginScreen
+        lang={lang}
+        onLang={setLang}
+        onLogin={handleLogin}
+      />
+    );
+  }
+
+  return (
+    <React.Fragment>
+      <AppFrame
+        variant={user.variant || "A"}
+        lang={lang}
+        channels={channels19}
+        mode={mode}
+        onLang={setLang}
+      />
+      <DemoControls
+        variant={user.variant || "A"}
+        mode={mode}
+        lang={lang}
+        onVariant={setVariant}
+        onMode={setMode}
+        onSignOut={handleSignOut}
+      />
+    </React.Fragment>
   );
 }
 

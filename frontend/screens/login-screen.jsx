@@ -330,7 +330,7 @@ function CosmicBrain() {
 }
 
 // ──────────────────────────────────────────────────────────────────
-window.LoginScreen = function LoginScreen({lang = "vi", state = "login"}) {
+window.LoginScreen = function LoginScreen({lang = "vi", state = "login", onLogin, onLang}) {
   const L = lang === "vi" ? {
     appName: "NeuraTriage EEG",
     tagline: "Cảnh báo sớm đột quỵ trên EEG",
@@ -366,7 +366,23 @@ window.LoginScreen = function LoginScreen({lang = "vi", state = "login"}) {
     headlineSub: "EEG helps you decide earlier — anywhere.",
   };
 
-  const isSplash = state === "splash";
+  const [internalState, setInternalState] = useS_L(state);
+  const emailRef = useR_L(null);
+  const isSplash = internalState === "splash";
+
+  function handleSignIn() {
+    setInternalState("splash");
+    setTimeout(() => {
+      if (typeof onLogin === "function") {
+        const email = (emailRef.current && emailRef.current.value) || "demo@neuratriage.dev";
+        onLogin({ email: email.trim() || "demo@neuratriage.dev", role: "clinician", variant: "A" });
+      }
+    }, 2400);
+  }
+
+  function handleLangToggle() {
+    if (typeof onLang === "function") onLang(lang === "vi" ? "en" : "vi");
+  }
 
   return (
     <div style={{
@@ -450,7 +466,12 @@ window.LoginScreen = function LoginScreen({lang = "vi", state = "login"}) {
               <span className="dot ns" style={{width: 7, height: 7}}/>
               {lang === "vi" ? "Hệ thống hoạt động bình thường" : "All systems operational"}
             </span>
-            <span style={{fontFamily: "var(--font-mono)", color: "var(--ink-3)"}}>VI / EN</span>
+            <button type="button" onClick={handleLangToggle} style={{
+              fontFamily: "var(--font-mono)", color: "var(--ink-3)",
+              background: "var(--bg-2)", border: "1px solid var(--line)",
+              borderRadius: 999, padding: "3px 10px", fontSize: 11,
+              cursor: "pointer", letterSpacing: "0.06em",
+            }}>{lang === "vi" ? "VI · EN" : "EN · VI"}</button>
           </div>
 
           {isSplash ? (
@@ -498,28 +519,32 @@ window.LoginScreen = function LoginScreen({lang = "vi", state = "login"}) {
               <div style={{marginTop: 24, display: "flex", flexDirection: "column", gap: 14}}>
                 <div>
                   <div style={{fontSize: 11, fontWeight: 500, color: "var(--ink-2)", marginBottom: 6}}>{L.email}</div>
-                  <input placeholder={L.emailPlc} defaultValue="bs.lan@hospital.vn" style={{
-                    width: "100%", padding: "10px 12px", fontSize: 13,
-                    border: "1px solid var(--line-2)", borderRadius: 7,
-                    background: "var(--bg)", fontFamily: "inherit",
-                  }} />
+                  <input ref={emailRef} placeholder={L.emailPlc} defaultValue="bs.lan@hospital.vn"
+                    onKeyDown={(e) => { if (e.key === "Enter") handleSignIn(); }}
+                    style={{
+                      width: "100%", padding: "10px 12px", fontSize: 13,
+                      border: "1px solid var(--line-2)", borderRadius: 7,
+                      background: "var(--bg)", fontFamily: "inherit",
+                    }} />
                 </div>
                 <div>
                   <div style={{display: "flex", justifyContent: "space-between", marginBottom: 6}}>
                     <span style={{fontSize: 11, fontWeight: 500, color: "var(--ink-2)"}}>{L.pass}</span>
                     <a style={{fontSize: 11, color: "oklch(0.55 0.20 295)", cursor: "pointer"}}>{L.forgot}</a>
                   </div>
-                  <input type="password" placeholder={L.passPlc} defaultValue="password" style={{
-                    width: "100%", padding: "10px 12px", fontSize: 13,
-                    border: "1px solid var(--line-2)", borderRadius: 7,
-                    background: "var(--bg)", fontFamily: "inherit",
-                  }} />
+                  <input type="password" placeholder={L.passPlc} defaultValue="password"
+                    onKeyDown={(e) => { if (e.key === "Enter") handleSignIn(); }}
+                    style={{
+                      width: "100%", padding: "10px 12px", fontSize: 13,
+                      border: "1px solid var(--line-2)", borderRadius: 7,
+                      background: "var(--bg)", fontFamily: "inherit",
+                    }} />
                 </div>
                 <label style={{display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "var(--ink-2)", cursor: "pointer"}}>
                   <input type="checkbox" defaultChecked style={{accentColor: "oklch(0.62 0.22 300)"}} />
                   <span>{L.remember}</span>
                 </label>
-                <button style={{
+                <button onClick={handleSignIn} style={{
                   width: "100%", padding: "11px 14px", fontSize: 13, fontWeight: 600,
                   border: "none", borderRadius: 7, color: "white", cursor: "pointer",
                   background: "linear-gradient(110deg, oklch(0.55 0.22 295), oklch(0.62 0.24 330))",
@@ -535,8 +560,8 @@ window.LoginScreen = function LoginScreen({lang = "vi", state = "login"}) {
               </div>
 
               <div style={{display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8}}>
-                <button className="btn" style={{padding: "10px 12px", fontSize: 12, justifyContent: "center"}}>{L.sso}</button>
-                <button className="btn" style={{padding: "10px 12px", fontSize: 12, justifyContent: "center"}}>{L.badge}</button>
+                <button className="btn" onClick={handleSignIn} style={{padding: "10px 12px", fontSize: 12, justifyContent: "center"}}>{L.sso}</button>
+                <button className="btn" onClick={handleSignIn} style={{padding: "10px 12px", fontSize: 12, justifyContent: "center"}}>{L.badge}</button>
               </div>
             </div>
           )}
