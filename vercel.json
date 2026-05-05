@@ -3,13 +3,14 @@
   "outputDirectory": "frontend",
   "functions": {
     "api/index.py": {
+      "runtime": "python3.12",
       "memory": 1024,
       "maxDuration": 60,
       "includeFiles": "backend/**"
     }
   },
   "rewrites": [
-    { "source": "/api/(.*)", "destination": "/api/index" }
+    { "source": "/api/(.*)", "destination": "/api/index.py" }
   ],
   "headers": [
     {
