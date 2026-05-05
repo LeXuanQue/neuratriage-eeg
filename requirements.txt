@@ -1,0 +1,17 @@
+# Vercel Python serverless dependencies (root)
+# Slimmed for 250MB unzipped limit.
+# Heavy ML deps (lightgbm, scipy, pandas) lazy-load qua _can_load_pipeline()
+# nếu Vercel build fail → strip block "ML pipeline (optional)" và deploy
+# /api/infer ở Render/Railway thay thế.
+
+# Core API
+flask>=3.0,<4
+pyjwt>=2.8,<3
+bcrypt>=4.1,<5
+
+# ML pipeline (optional — bỏ nếu Vercel báo bundle > 250MB)
+numpy>=1.26
+scipy>=1.11
+pandas>=2.1
+lightgbm>=4.1
+joblib>=1.3

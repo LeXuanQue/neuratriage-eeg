@@ -367,17 +367,47 @@ window.LoginScreen = function LoginScreen({lang = "vi", state = "login", onLogin
   };
 
   const [internalState, setInternalState] = useS_L(state);
+  const [errorMsg, setErrorMsg] = useS_L("");
+  const [busy, setBusy] = useS_L(false);
   const emailRef = useR_L(null);
+  const passwordRef = useR_L(null);
   const isSplash = internalState === "splash";
 
-  function handleSignIn() {
+  async function handleSignIn() {
+    if (busy) return;
+    const email = ((emailRef.current && emailRef.current.value) || "").trim();
+    const password = (passwordRef.current && passwordRef.current.value) || "";
+    if (!email || !password) {
+      setErrorMsg(lang === "vi"
+        ? "Vui lòng nhập email và mật khẩu."
+        : "Please enter email and password.");
+      return;
+    }
+    setErrorMsg("");
+    setBusy(true);
     setInternalState("splash");
-    setTimeout(() => {
-      if (typeof onLogin === "function") {
-        const email = (emailRef.current && emailRef.current.value) || "demo@neuratriage.dev";
-        onLogin({ email: email.trim() || "demo@neuratriage.dev", role: "clinician", variant: "A" });
-      }
-    }, 2400);
+    try {
+      if (typeof onLogin !== "function") throw new Error("onLogin not wired");
+      await onLogin(email, password);
+      // success: parent will unmount this screen and route to AppFrame
+    } catch (e) {
+      setInternalState("login");
+      setBusy(false);
+      const code = e && e.code;
+      const fallback = lang === "vi" ? "Đăng nhập thất bại. Thử lại." : "Login failed. Try again.";
+      const map = lang === "vi" ? {
+        INVALID_CREDENTIALS: "Sai email hoặc mật khẩu.",
+        MISSING_FIELDS: "Thiếu email hoặc mật khẩu.",
+        TIMEOUT: "Server không phản hồi. Kiểm tra mạng/backend.",
+        NETWORK_ERROR: "Không kết nối được backend. Đang chạy local? Mở http://localhost:8501",
+      } : {
+        INVALID_CREDENTIALS: "Wrong email or password.",
+        MISSING_FIELDS: "Missing email or password.",
+        TIMEOUT: "Server timeout. Check network / backend.",
+        NETWORK_ERROR: "Cannot reach backend. Running local? Open http://localhost:8501",
+      };
+      setErrorMsg(map[code] || (e && e.message) || fallback);
+    }
   }
 
   function handleLangToggle() {
@@ -532,7 +562,7 @@ window.LoginScreen = function LoginScreen({lang = "vi", state = "login", onLogin
                     <span style={{fontSize: 11, fontWeight: 500, color: "var(--ink-2)"}}>{L.pass}</span>
                     <a style={{fontSize: 11, color: "oklch(0.55 0.20 295)", cursor: "pointer"}}>{L.forgot}</a>
                   </div>
-                  <input type="password" placeholder={L.passPlc} defaultValue="password"
+                  <input ref={passwordRef} type="password" placeholder={L.passPlc} defaultValue="password"
                     onKeyDown={(e) => { if (e.key === "Enter") handleSignIn(); }}
                     style={{
                       width: "100%", padding: "10px 12px", fontSize: 13,
@@ -544,13 +574,26 @@ window.LoginScreen = function LoginScreen({lang = "vi", state = "login", onLogin
                   <input type="checkbox" defaultChecked style={{accentColor: "oklch(0.62 0.22 300)"}} />
                   <span>{L.remember}</span>
                 </label>
-                <button onClick={handleSignIn} style={{
+                {errorMsg && (
+                  <div role="alert" style={{
+                    padding: "9px 12px",
+                    background: "oklch(0.95 0.05 25)",
+                    border: "1px solid oklch(0.78 0.16 25)",
+                    color: "oklch(0.35 0.18 25)",
+                    borderRadius: 7,
+                    fontSize: 12,
+                    lineHeight: 1.45,
+                  }}>{errorMsg}</div>
+                )}
+                <button onClick={handleSignIn} disabled={busy} style={{
                   width: "100%", padding: "11px 14px", fontSize: 13, fontWeight: 600,
-                  border: "none", borderRadius: 7, color: "white", cursor: "pointer",
+                  border: "none", borderRadius: 7, color: "white",
+                  cursor: busy ? "not-allowed" : "pointer",
+                  opacity: busy ? 0.7 : 1,
                   background: "linear-gradient(110deg, oklch(0.55 0.22 295), oklch(0.62 0.24 330))",
                   boxShadow: "0 6px 24px oklch(0.62 0.24 310 / 0.45)",
                   fontFamily: "inherit",
-                }}>{L.signIn} →</button>
+                }}>{busy ? (lang === "vi" ? "Đang đăng nhập…" : "Signing in…") : (L.signIn + " →")}</button>
               </div>
 
               <div style={{display: "flex", alignItems: "center", gap: 10, margin: "20px 0", color: "var(--ink-3)", fontSize: 11}}>
