@@ -1,0 +1,711 @@
+﻿<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<title>NeuraTriage EEG - EEG triage research prototype</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&family=Fraunces:opsz,wght@9..144,300;9..144,400;9..144,500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#e6ecf2; --ink-2:#a8b2bf; --ink-3:#6b7585; --ink-4:#3a4150;
+  --bg:#07080b; --bg-2:#0c0e13; --bg-3:#13161d; --line:#1c2029; --line-2:#262b35;
+  --cyan:oklch(0.78 0.14 200); --cyan-2:oklch(0.65 0.15 220);
+  --violet:oklch(0.62 0.20 280); --violet-2:oklch(0.50 0.22 285);
+  --amber:oklch(0.78 0.15 75); --red:oklch(0.65 0.22 25); --green:oklch(0.72 0.16 152);
+  --font-ui:"Inter",system-ui,sans-serif;
+  --font-mono:"JetBrains Mono",ui-monospace,monospace;
+  --font-display:"Fraunces",Georgia,serif;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;background:var(--bg);color:var(--ink);font-family:var(--font-ui);-webkit-font-smoothing:antialiased;font-feature-settings:"ss01","cv11";overflow-x:hidden}
+a{color:inherit;text-decoration:none}
+.mono{font-family:var(--font-mono);font-feature-settings:"tnum","zero"}
+.display{font-family:var(--font-display);font-weight:400;letter-spacing:-0.02em}
+
+/* ============ NAV ============ */
+.nav{position:fixed;top:0;left:0;right:0;z-index:100;display:flex;align-items:center;justify-content:space-between;padding:18px 36px;backdrop-filter:blur(14px) saturate(140%);background:oklch(0.04 0.005 250 / 0.6);border-bottom:1px solid oklch(1 0 0 / 0.04)}
+.nav-brand{display:flex;align-items:center;gap:11px;font-weight:600;letter-spacing:-0.01em;font-size:14px}
+.nav-logo{width:30px;height:30px;border-radius:8px;background:linear-gradient(135deg,var(--cyan-2),var(--violet));display:grid;place-items:center;color:#fff;font-weight:700;font-size:11px;font-family:var(--font-mono);box-shadow:0 4px 14px -4px oklch(0.55 0.18 260 / 0.6),inset 0 1px 0 oklch(1 0 0 / 0.2)}
+.nav-links{display:flex;gap:32px;font-size:13px;color:var(--ink-2)}
+.nav-links a:hover{color:var(--ink)}
+.nav-cta{display:flex;gap:10px;align-items:center}
+.btn{font-family:inherit;font-size:13px;font-weight:500;padding:9px 16px;border-radius:7px;border:1px solid var(--line-2);background:transparent;color:var(--ink);cursor:pointer;display:inline-flex;align-items:center;gap:7px;transition:all .15s}
+.btn:hover{background:oklch(1 0 0 / 0.04);border-color:oklch(1 0 0 / 0.18)}
+.btn-primary{background:linear-gradient(135deg,var(--cyan-2),var(--violet));border-color:transparent;color:#fff;box-shadow:0 4px 18px -4px oklch(0.55 0.18 260 / 0.5)}
+.btn-primary:hover{transform:translateY(-1px);box-shadow:0 8px 24px -4px oklch(0.55 0.18 260 / 0.65)}
+
+/* ============ HERO ============ */
+.hero{position:relative;min-height:100vh;display:flex;align-items:center;justify-content:center;overflow:hidden;padding:120px 36px 80px}
+.hero-bg{position:absolute;inset:0;pointer-events:none;background:
+  radial-gradient(ellipse 80% 60% at 50% 30%,oklch(0.20 0.10 250 / 0.5),transparent 60%),
+  radial-gradient(ellipse 60% 50% at 20% 80%,oklch(0.18 0.14 280 / 0.4),transparent 60%),
+  radial-gradient(ellipse 50% 40% at 85% 15%,oklch(0.22 0.10 200 / 0.35),transparent 60%),
+  linear-gradient(180deg,#07080b 0%,#04060a 100%)}
+.hero-grid{position:absolute;inset:0;background-image:linear-gradient(oklch(1 0 0 / 0.025) 1px,transparent 1px),linear-gradient(90deg,oklch(1 0 0 / 0.025) 1px,transparent 1px);background-size:64px 64px;mask-image:radial-gradient(ellipse 80% 70% at 50% 40%,black 30%,transparent 80%);-webkit-mask-image:radial-gradient(ellipse 80% 70% at 50% 40%,black 30%,transparent 80%);pointer-events:none}
+.hero-inner{position:relative;z-index:5;width:100%;max-width:1280px;display:grid;grid-template-columns:1.05fr 1fr;gap:60px;align-items:center}
+.hero-eyebrow{display:inline-flex;align-items:center;gap:10px;padding:6px 14px;border-radius:999px;background:oklch(1 0 0 / 0.04);border:1px solid oklch(1 0 0 / 0.08);font-size:12px;color:var(--ink-2);margin-bottom:24px;font-family:var(--font-mono);letter-spacing:0.04em}
+.hero-eyebrow .pip{width:6px;height:6px;border-radius:50%;background:var(--cyan);box-shadow:0 0 10px var(--cyan);animation:pulse 1.6s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:0.5;transform:scale(1.5)}}
+.hero h1{font-family:var(--font-display);font-weight:300;font-size:clamp(40px,5.5vw,76px);line-height:1.02;letter-spacing:-0.025em;margin:0 0 22px}
+.hero h1 em{font-style:italic;font-weight:400;background:linear-gradient(135deg,var(--cyan),var(--violet));-webkit-background-clip:text;background-clip:text;color:transparent}
+.hero p.lead{font-size:18px;line-height:1.55;color:var(--ink-2);max-width:560px;margin:0 0 32px;font-weight:300}
+.hero-cta{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+.hero-meta{display:flex;gap:28px;margin-top:42px;padding-top:28px;border-top:1px solid oklch(1 0 0 / 0.06)}
+.hero-meta-item{flex:1}
+.hero-meta-item .num{font-family:var(--font-display);font-size:30px;font-weight:400;letter-spacing:-0.02em;color:var(--ink);line-height:1}
+.hero-meta-item .lbl{font-size:11px;color:var(--ink-3);text-transform:uppercase;letter-spacing:0.08em;margin-top:6px}
+
+/* ============ SPHERE ============ */
+.sphere-wrap{position:relative;width:100%;aspect-ratio:1;max-width:540px;justify-self:end}
+.sphere-canvas{position:absolute;inset:0;width:100%;height:100%}
+.sphere-readout{position:absolute;left:0;right:0;top:50%;transform:translateY(-50%);text-align:center;pointer-events:none}
+.sphere-readout .label{font-size:10.5px;color:var(--ink-3);text-transform:uppercase;letter-spacing:0.14em;font-family:var(--font-mono);margin-bottom:6px}
+.sphere-readout .val{font-family:var(--font-display);font-size:54px;font-weight:300;letter-spacing:-0.03em;line-height:1;color:var(--ink);transition:color .4s}
+.sphere-readout .val .pct{font-family:var(--font-mono);font-size:18px;color:var(--ink-2);margin-left:2px;font-weight:400;vertical-align:top;position:relative;top:8px}
+.sphere-readout .sub{font-size:11px;color:var(--ink-3);margin-top:8px;font-family:var(--font-mono)}
+.sphere-readout .cls{margin-top:14px;display:inline-flex;gap:6px;padding:4px 12px;border-radius:999px;font-size:11px;font-family:var(--font-mono);letter-spacing:0.06em;border:1px solid;background:oklch(0.10 0.03 250 / 0.7);backdrop-filter:blur(8px)}
+
+/* ============ SECTIONS ============ */
+section{position:relative;padding:120px 36px}
+.container{max-width:1200px;margin:0 auto}
+.eyebrow{font-family:var(--font-mono);font-size:11px;color:var(--cyan);letter-spacing:0.18em;text-transform:uppercase;margin-bottom:18px;display:inline-flex;align-items:center;gap:10px}
+.eyebrow::before{content:"";width:24px;height:1px;background:var(--cyan)}
+h2.section-title{font-family:var(--font-display);font-size:clamp(32px,4vw,52px);line-height:1.05;letter-spacing:-0.02em;font-weight:300;margin:0 0 18px;max-width:780px}
+h2.section-title em{font-style:italic;color:var(--cyan)}
+p.section-lead{font-size:17px;line-height:1.55;color:var(--ink-2);max-width:640px;margin:0 0 56px;font-weight:300}
+
+/* ============ PROBLEM ============ */
+.problem{background:linear-gradient(180deg,#04060a 0%,#070a10 100%);position:relative;overflow:hidden}
+
+/* Marquee facts — full-bleed background that rotates */
+.problem-marquee{
+  position:absolute;inset:0;pointer-events:none;z-index:0;
+}
+.problem-marquee .slide{
+  position:absolute;inset:0;
+  display:flex;align-items:center;justify-content:center;
+  opacity:0;transition:opacity 1.2s ease;
+}
+.problem-marquee .slide.on{opacity:1}
+.problem-marquee .num{
+  font-family:var(--font-display);
+  font-weight:300;
+  letter-spacing:-0.06em;
+  line-height:0.85;
+  font-size:clamp(180px, 28vw, 440px);
+  background:linear-gradient(180deg,
+    oklch(0.30 0.08 25 / 0.18) 0%,
+    oklch(0.20 0.06 25 / 0.05) 60%,
+    transparent 100%);
+  -webkit-background-clip:text;
+  background-clip:text;
+  color:transparent;
+  white-space:nowrap;
+  user-select:none;
+  transform:scale(1);
+  transition:transform 6s linear, opacity 1.2s ease;
+}
+.problem-marquee .slide.on .num{transform:scale(1.06)}
+.problem-marquee .lbl-strip{
+  position:absolute;left:0;right:0;bottom:8%;
+  text-align:center;
+  font-family:var(--font-mono);
+  font-size:11px;letter-spacing:0.30em;text-transform:uppercase;
+  color:oklch(0.55 0.10 25 / 0.55);
+  pointer-events:none;
+}
+.problem-marquee .lbl-strip span{display:inline-block;padding:0 18px}
+.problem-marquee .lbl-strip span.on{color:oklch(0.75 0.14 25);text-shadow:0 0 12px oklch(0.65 0.20 25 / 0.6)}
+.problem-marquee::after{
+  content:"";position:absolute;inset:0;
+  background:radial-gradient(ellipse 80% 60% at 50% 50%, transparent 30%, #04060a 85%);
+  pointer-events:none;
+}
+
+.problem .container{position:relative;z-index:1}
+.problem-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--line);border:1px solid var(--line);border-radius:14px;overflow:hidden;margin-top:40px}
+.problem-stat{background:var(--bg-2);padding:32px 28px}
+.problem-stat .n{font-family:var(--font-display);font-size:48px;font-weight:300;letter-spacing:-0.025em;line-height:1;background:linear-gradient(135deg,#fff,var(--ink-2));-webkit-background-clip:text;background-clip:text;color:transparent;margin-bottom:10px}
+.problem-stat .n .small{font-size:22px;color:var(--ink-3);-webkit-text-fill-color:var(--ink-3);font-family:var(--font-mono);margin-left:4px}
+.problem-stat .lbl{font-size:13px;color:var(--ink-2);line-height:1.5}
+.problem-stat .src{font-size:10.5px;color:var(--ink-4);margin-top:14px;font-family:var(--font-mono)}
+
+/* ============ HOW IT WORKS — pipeline ============ */
+.pipeline{background:#06080c}
+.pipeline-stages{display:grid;grid-template-columns:repeat(4,1fr);gap:18px;margin-top:60px;position:relative}
+.pipeline-stages::before{content:"";position:absolute;top:34px;left:8%;right:8%;height:1px;background:linear-gradient(90deg,transparent,var(--line-2) 12%,var(--line-2) 88%,transparent);z-index:0}
+.stage{position:relative;z-index:1}
+.stage-idx{width:68px;height:68px;border-radius:50%;background:var(--bg-2);border:1px solid var(--line-2);display:grid;place-items:center;font-family:var(--font-mono);font-size:13px;color:var(--cyan);margin-bottom:22px;position:relative}
+.stage-idx::after{content:"";position:absolute;inset:-6px;border-radius:50%;background:radial-gradient(circle,var(--cyan) 0%,transparent 70%);opacity:0.2;z-index:-1}
+.stage h3{font-size:16px;font-weight:600;margin:0 0 8px;letter-spacing:-0.01em}
+.stage p{font-size:13.5px;line-height:1.55;color:var(--ink-2);margin:0;font-weight:300}
+.stage .tags{margin-top:14px;display:flex;flex-wrap:wrap;gap:5px}
+.stage .tag{font-family:var(--font-mono);font-size:10.5px;padding:3px 8px;border-radius:4px;background:oklch(0.18 0.04 250);color:var(--ink-2);border:1px solid var(--line-2)}
+
+/* ============ FEATURES grid ============ */
+.features{background:linear-gradient(180deg,#06080c 0%,#04060a 100%)}
+.feature-grid{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:18px;margin-top:50px}
+.feature-grid .row-2{display:contents}
+.feature-card{background:var(--bg-2);border:1px solid var(--line);border-radius:16px;padding:30px;position:relative;overflow:hidden;min-height:280px;display:flex;flex-direction:column}
+.feature-card.tall{grid-row:span 2}
+.feature-card h3{font-size:19px;font-weight:600;margin:0 0 10px;letter-spacing:-0.01em}
+.feature-card p{font-size:13.5px;line-height:1.55;color:var(--ink-2);margin:0;font-weight:300}
+.feature-card .visual{margin-top:22px;flex:1;min-height:130px;display:flex;align-items:flex-end;justify-content:center;position:relative}
+.feature-card .ico{width:38px;height:38px;border-radius:9px;background:oklch(0.16 0.05 250);border:1px solid var(--line-2);display:grid;place-items:center;margin-bottom:18px;color:var(--cyan)}
+
+/* ============ AUDIENCES ============ */
+.aud{background:#06080c}
+.aud-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--line);border-radius:14px;overflow:hidden;border:1px solid var(--line);margin-top:40px}
+.aud-card{background:var(--bg-2);padding:32px 28px;display:flex;flex-direction:column;gap:14px}
+.aud-card .role{font-family:var(--font-mono);font-size:11px;color:var(--cyan);letter-spacing:0.12em;text-transform:uppercase}
+.aud-card h3{font-family:var(--font-display);font-size:24px;font-weight:400;letter-spacing:-0.01em;margin:0;line-height:1.2}
+.aud-card p{font-size:13.5px;line-height:1.55;color:var(--ink-2);margin:0;flex:1;font-weight:300}
+.aud-card ul{list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:8px}
+.aud-card li{font-size:12.5px;color:var(--ink-2);display:flex;gap:10px;align-items:flex-start}
+.aud-card li::before{content:"";width:5px;height:5px;border-radius:50%;background:var(--cyan);margin-top:8px;flex:none}
+
+/* ============ CTA ============ */
+.cta{background:linear-gradient(180deg,#04060a 0%,#08090d 100%);text-align:center;padding:140px 36px}
+.cta h2{font-family:var(--font-display);font-size:clamp(36px,4.5vw,60px);line-height:1.05;letter-spacing:-0.02em;font-weight:300;margin:0 0 22px}
+.cta h2 em{font-style:italic;background:linear-gradient(135deg,var(--cyan),var(--violet));-webkit-background-clip:text;background-clip:text;color:transparent}
+.cta p{font-size:17px;color:var(--ink-2);max-width:560px;margin:0 auto 36px;font-weight:300;line-height:1.55}
+.cta-row{display:flex;justify-content:center;gap:12px;flex-wrap:wrap}
+
+/* ============ FOOTER ============ */
+footer{padding:60px 36px 36px;background:#04060a;border-top:1px solid var(--line)}
+.foot{max-width:1200px;margin:0 auto;display:grid;grid-template-columns:1.4fr 1fr 1fr 1fr;gap:40px}
+.foot h4{font-size:11px;color:var(--ink-3);text-transform:uppercase;letter-spacing:0.1em;margin:0 0 14px;font-weight:500}
+.foot a,.foot p{color:var(--ink-2);font-size:13px;line-height:1.7;display:block;margin:0}
+.foot a:hover{color:var(--ink)}
+.disclaimer{margin-top:48px;padding:18px 22px;background:oklch(0.18 0.06 60 / 0.5);border:1px solid oklch(0.45 0.16 60 / 0.4);border-radius:8px;font-size:12px;color:oklch(0.85 0.04 80);line-height:1.6}
+.disclaimer strong{color:oklch(0.92 0.06 80)}
+.foot-bottom{max-width:1200px;margin:32px auto 0;padding-top:22px;border-top:1px solid var(--line);display:flex;justify-content:space-between;font-size:12px;color:var(--ink-3);font-family:var(--font-mono)}
+
+/* ============ Responsive ============ */
+@media (max-width:980px){
+  .hero-inner{grid-template-columns:1fr;gap:40px}
+  .sphere-wrap{max-width:420px;margin:0 auto;justify-self:center}
+  .problem-stats{grid-template-columns:repeat(2,1fr)}
+  .pipeline-stages{grid-template-columns:repeat(2,1fr)}
+  .pipeline-stages::before{display:none}
+  .feature-grid{grid-template-columns:1fr 1fr}
+  .feature-card.tall{grid-row:auto}
+  .aud-grid{grid-template-columns:1fr}
+  .foot{grid-template-columns:1fr 1fr}
+  .nav-links{display:none}
+}
+
+/* ============ SCROLL REVEAL ============ */
+.reveal{opacity:0;transform:translateY(28px);transition:opacity 0.9s cubic-bezier(0.2,0.7,0.2,1), transform 0.9s cubic-bezier(0.2,0.7,0.2,1);will-change:opacity,transform}
+.reveal.r-left{transform:translateX(-32px)}
+.reveal.r-right{transform:translateX(32px)}
+.reveal.r-scale{transform:scale(0.94)}
+.reveal.r-fade{transform:none}
+.reveal.in{opacity:1;transform:none}
+.reveal-stagger > *{opacity:0;transform:translateY(22px);transition:opacity 0.7s cubic-bezier(0.2,0.7,0.2,1), transform 0.7s cubic-bezier(0.2,0.7,0.2,1)}
+.reveal-stagger.in > *{opacity:1;transform:none}
+.reveal-stagger.in > *:nth-child(1){transition-delay:0.05s}
+.reveal-stagger.in > *:nth-child(2){transition-delay:0.13s}
+.reveal-stagger.in > *:nth-child(3){transition-delay:0.21s}
+.reveal-stagger.in > *:nth-child(4){transition-delay:0.29s}
+.reveal-stagger.in > *:nth-child(5){transition-delay:0.37s}
+.reveal-stagger.in > *:nth-child(6){transition-delay:0.45s}
+@media (prefers-reduced-motion: reduce){
+  .reveal,.reveal-stagger > *{transition:none;opacity:1;transform:none}
+}
+</style>
+</head>
+<body>
+
+<!-- ============ NAV ============ -->
+<nav class="nav">
+  <a href="#" class="nav-brand">
+    <span class="nav-logo">NT</span>
+    <span>NeuraTriage <span style="color:var(--ink-3);font-weight:400">EEG</span></span>
+  </a>
+  <div class="nav-links">
+    <a href="#problem">Vấn đề</a>
+    <a href="#pipeline">Công nghệ</a>
+    <a href="#features">Tính năng</a>
+    <a href="#audience">Đối tượng</a>
+  </div>
+  <div class="nav-cta">
+    <a class="btn" href="#problem">Tìm hiểu</a>
+    <a class="btn btn-primary" href="app.html">Mở ứng dụng →</a>
+  </div>
+</nav>
+
+<!-- ============ HERO ============ -->
+<header class="hero">
+  <div class="hero-bg"></div>
+  <div class="hero-grid"></div>
+  <div class="hero-inner">
+    <div>
+      <div class="hero-eyebrow"><span class="pip"></span><span>Real-time · 18 kênh · 256 Hz</span></div>
+      <h1>Hỗ trợ triage EEG<br/>trong <em>vài giây</em>,<br/>không thay thế CT/MRI.</h1>
+      <p class="lead">NeuraTriage EEG kết hợp <span style="color:var(--ink)">ApEn · FuEn · MFDFA</span> với LightGBM để hiển thị mẫu nguy cơ EEG tại giường. Prototype hiện có bằng chứng binary ischemic-vs-non-stroke; HS mới ở mức exploratory 4 bệnh nhân, chưa validated 3-class.</p>
+      <div class="hero-cta">
+        <a class="btn btn-primary" href="app.html">Xem demo trực tiếp →</a>
+        <a class="btn" href="#pipeline">Cách hoạt động</a>
+      </div>
+      <div class="hero-meta">
+        <div class="hero-meta-item">
+          <div class="num">0.991</div>
+          <div class="lbl">Macro-F1 NS/IS + SQI</div>
+        </div>
+        <div class="hero-meta-item">
+          <div class="num">4</div>
+          <div class="lbl">HS exploratory patients</div>
+        </div>
+        <div class="hero-meta-item">
+          <div class="num">100</div>
+          <div class="lbl">Patients - 50 NS / 50 IS</div>
+        </div>
+      </div>
+    </div>
+    <!-- Sphere -->
+    <div class="sphere-wrap">
+      <canvas id="sphere" class="sphere-canvas"></canvas>
+      <div class="sphere-readout">
+        <div class="label">EEG risk pattern</div>
+        <div class="val" id="sphereVal">0.78<span class="pct">·HS</span></div>
+        <div class="sub" id="sphereSub">SQI 0.91 · 256 Hz · 18 ch</div>
+        <div class="cls" id="sphereCls" style="color:var(--red);border-color:oklch(0.45 0.18 25 / 0.5)">
+          <span style="width:6px;height:6px;border-radius:50%;background:currentColor;align-self:center"></span>
+          DEMO · HS SIMULATION
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<!-- ============ PROBLEM ============ -->
+<section id="problem" class="problem">
+  <div class="container">
+    <div class="eyebrow reveal">Bối cảnh lâm sàng</div>
+    <h2 class="section-title reveal">Mỗi <em>phút trễ</em> trong cửa sổ đột quỵ, <span style="color:var(--ink-2)">1.9 triệu nơ-ron mất đi.</span></h2>
+    <p class="section-lead">CT/MRI vẫn là tiêu chuẩn xác nhận. EEG di động có thể hỗ trợ triage sớm tại ED hoặc xe cấp cứu, nhưng output chỉ là tín hiệu hỗ trợ, không phải chẩn đoán.</p>
+    <div class="problem-stats reveal-stagger">
+      <div class="problem-stat">
+        <div class="n">1.9<span class="small">M</span></div>
+        <div class="lbl">Nơ-ron mất mỗi phút trong đột quỵ thiếu máu cục bộ.</div>
+        <div class="src">Saver, Stroke 2006</div>
+      </div>
+      <div class="problem-stat">
+        <div class="n">270<span class="small">phút</span></div>
+        <div class="lbl">Trung vị từ khởi phát triệu chứng đến quyết định điều trị.</div>
+        <div class="src">GBD-Stroke 2019</div>
+      </div>
+      <div class="problem-stat">
+        <div class="n">15<span class="small">%</span></div>
+        <div class="lbl">Xuất huyết não cần được loại trừ bằng workflow tiêu chuẩn trước điều trị.</div>
+        <div class="src">AHA Heart Disease Stats</div>
+      </div>
+      <div class="problem-stat">
+        <div class="n">62<span class="small">%</span></div>
+        <div class="lbl">Một số cơ sở không có CT 24/7, nên triage và chuyển tuyến là nút thắt thực tế.</div>
+        <div class="src">Bộ Y tế Việt Nam, 2023</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ PIPELINE ============ -->
+<section id="pipeline" class="pipeline">
+  <div class="container">
+    <div class="eyebrow reveal">Pipeline kỹ thuật</div>
+    <h2 class="section-title reveal">Bốn lớp xử lý, một <em>quyết định</em>.</h2>
+    <p class="section-lead reveal">Tín hiệu EEG đi qua bộ lọc, trích xuất đặc trưng phi tuyến, gắn cờ chất lượng tín hiệu, rồi được làm mượt bằng EMA + hysteresis trước khi kích hoạt cảnh báo.</p>
+    <div class="pipeline-stages reveal-stagger">
+      <div class="stage">
+        <div class="stage-idx">01</div>
+        <h3>Tiền xử lý online</h3>
+        <p>Bandpass 0.5–45 Hz, notch 50/60 Hz, common average reference, impute kênh thiếu (NaN→median), clip outliers.</p>
+        <div class="tags"><span class="tag">CAR</span><span class="tag">notch</span><span class="tag">impute</span></div>
+      </div>
+      <div class="stage">
+        <div class="stage-idx">02</div>
+        <h3>Đặc trưng phi tuyến</h3>
+        <p>Approximate Entropy + Fuzzy Entropy trên 18 kênh, MFDFA Δh / Δα trên các vùng não, BSI và band-power ratios.</p>
+        <div class="tags"><span class="tag">ApEn</span><span class="tag">FuEn</span><span class="tag">MFDFA</span><span class="tag">BSI</span></div>
+      </div>
+      <div class="stage">
+        <div class="stage-idx">03</div>
+        <h3>LightGBM research model</h3>
+        <p>Mô hình demo xuất xác suất cho giao diện realtime. Bằng chứng hiện tại được báo cáo cho bài toán binary NS / IS; HS cần cohort thật để validation.</p>
+        <div class="tags"><span class="tag">LightGBM</span><span class="tag">Optuna</span><span class="tag">binary evidence</span></div>
+      </div>
+      <div class="stage">
+        <div class="stage-idx">04</div>
+        <h3>Cảnh báo có trễ</h3>
+        <p>EMA β=0.3 làm mượt xác suất. Hysteresis (high/low threshold) chống nhiễu. Cooldown ngăn cảnh báo lặp.</p>
+        <div class="tags"><span class="tag">EMA</span><span class="tag">hysteresis</span><span class="tag">cooldown</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ FEATURES ============ -->
+<section id="features" class="features">
+  <div class="container">
+    <div class="eyebrow reveal">Tính năng</div>
+    <h2 class="section-title reveal">Một <em>command center</em> cho ekíp đột quỵ.</h2>
+    <p class="section-lead reveal">Từ giường bệnh đến hội chẩn từ xa. Đồng bộ với hồ sơ bệnh nhân, người thân, và lịch trình báo cáo.</p>
+    <div class="feature-grid reveal-stagger">
+      <div class="feature-card tall">
+        <div class="ico">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 12h3l2-6 4 12 2-9 2 5h5"/></svg>
+        </div>
+        <h3>Theo dõi trực tiếp đa lớp</h3>
+        <p>Giao diện chia ba bố cục (Split / Risk-first / Research) tùy bác sĩ lâm sàng, kỹ thuật viên hay nhà nghiên cứu cần xem gì. Waveform 18 kênh, topomap delta, băng tần, đường xác suất 80 giây gần nhất.</p>
+        <div class="visual">
+          <svg viewBox="0 0 360 180" width="100%" preserveAspectRatio="xMidYMid meet">
+            <defs><linearGradient id="grA" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="oklch(0.65 0.22 25)" stop-opacity="0.4"/><stop offset="1" stop-color="oklch(0.65 0.22 25)" stop-opacity="0"/></linearGradient></defs>
+            <g id="featWaves"></g>
+            <path id="featProb" fill="url(#grA)" stroke="oklch(0.7 0.20 25)" stroke-width="1.5"/>
+          </svg>
+        </div>
+      </div>
+      <div class="feature-card">
+        <div class="ico">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18 14 14 0 0 1 0-18z"/></svg>
+        </div>
+        <h3>Đa thiết bị</h3>
+        <p>g.tec g.HIamp 18ch, Brain-Life Focus+ 4ch, custom - tất cả đều map về pipeline 18-channel với impute tự động.</p>
+      </div>
+      <div class="feature-card">
+        <div class="ico">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5M9 13h7M9 17h5"/></svg>
+        </div>
+        <h3>Báo cáo tuần tự động</h3>
+        <p>Generate PDF + gửi SendGrid mỗi thứ Hai 7:00 đến bác sĩ và người thân (theo cấu hình notify).</p>
+      </div>
+      <div class="feature-card">
+        <div class="ico">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.4-4.4"/></svg>
+        </div>
+        <h3>SHAP explainability</h3>
+        <p>Mỗi cảnh báo đi kèm top features đóng góp. Bác sĩ thấy rõ FuEn(T4), Δh MFDFA(Fp2)… đã đẩy quyết định.</p>
+      </div>
+      <div class="feature-card">
+        <div class="ico">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M6 19h12l-1.5-2v-5a4.5 4.5 0 0 0-9 0v5L6 19z"/><path d="M10 22a2 2 0 0 0 4 0"/></svg>
+        </div>
+        <h3>Hysteresis chống nhiễu</h3>
+        <p>Threshold cao mới enter alert, threshold thấp mới exit. Cooldown ngăn flicker. SQI gate loại tín hiệu kém.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ AUDIENCES ============ -->
+<section id="audience" class="aud">
+  <div class="container">
+    <div class="eyebrow reveal">Đối tượng sử dụng</div>
+    <h2 class="section-title reveal">Một sản phẩm, <em>ba quy trình</em>.</h2>
+    <div class="aud-grid reveal-stagger">
+      <div class="aud-card">
+        <div class="role">Bác sĩ lâm sàng</div>
+        <h3>Quyết định nhanh, có giải thích</h3>
+        <p>Layout Risk-first ưu tiên gauge + recommendation. Mỗi alert có giải thích ngắn, mức tin cậy, SQI và hành động hội chẩn, không tự động gợi ý điều trị.</p>
+        <ul>
+          <li>Gauge risk-pattern với giải thích theo từng kịch bản demo</li>
+          <li>Acknowledge / Page workflow với audit log</li>
+          <li>Hồ sơ bệnh nhân + onset triệu chứng + sinh hiệu</li>
+        </ul>
+      </div>
+      <div class="aud-card">
+        <div class="role">Kỹ thuật viên EEG</div>
+        <h3>Kết nối thiết bị, đảm bảo tín hiệu</h3>
+        <p>Layout Split với waveform full + SQI realtime + topomap. Setup wizard cho từng device, channel mapping, montage check trước khi start session.</p>
+        <ul>
+          <li>Device pairing wizard cho BLE / wired</li>
+          <li>Channel-by-channel SQI heatmap</li>
+          <li>Montage editor (10-20 / 10-10) + impedance check</li>
+        </ul>
+      </div>
+      <div class="aud-card">
+        <div class="role">Nhà nghiên cứu</div>
+        <h3>Inspect mô hình, chạy ablation</h3>
+        <p>Layout Research-console với feature importance global, confusion matrix, ablation toggles (ApEn off, MFDFA off…). Export CSV inference, replay session.</p>
+        <ul>
+          <li>SHAP global + per-window local</li>
+          <li>Metrics đọc từ kết quả ablation/research local</li>
+          <li>Ablation panel: bật/tắt nhóm features</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ CTA ============ -->
+<section class="cta">
+  <h2 class="reveal r-scale">Một prototype triage<br/>cần bằng chứng <em>rõ ràng.</em></h2>
+  <p class="reveal">Trải nghiệm command center với replay/mock data và backend FastAPI. Mọi output là research evidence, không phải medical-device claim.</p>
+  <div class="cta-row reveal">
+    <a class="btn btn-primary" href="app.html">Mở Command Center →</a>
+    <a class="btn" href="#pipeline">Xem pipeline kỹ thuật</a>
+  </div>
+</section>
+
+<!-- ============ FOOTER ============ -->
+<footer>
+  <div class="foot">
+    <div>
+      <div style="display:flex;align-items:center;gap:11px;margin-bottom:14px">
+        <span class="nav-logo">NT</span>
+        <span style="font-weight:600">NeuraTriage EEG</span>
+      </div>
+      <p style="max-width:320px">Prototype hỗ trợ triage EEG - kết hợp ApEn, FuEn, MFDFA và LightGBM cho nghiên cứu tại giường.</p>
+    </div>
+    <div>
+      <h4>Sản phẩm</h4>
+      <a href="app.html">Command Center</a>
+      <a href="#features">Tính năng</a>
+      <a href="#pipeline">Pipeline</a>
+    </div>
+    <div>
+      <h4>Tài liệu</h4>
+      <a href="#">API reference</a>
+      <a href="#">Channel mapping</a>
+      <a href="#">Brain-Life Focus+</a>
+    </div>
+    <div>
+      <h4>Liên hệ</h4>
+      <a href="mailto:vantrung66055@gmail.com">vantrung66055@gmail.com</a>
+      <a href="https://github.com/LeXuanQue" target="_blank" rel="noopener">GitHub</a>
+      <a href="#">Research papers</a>
+    </div>
+  </div>
+  <div class="foot" style="margin-top:0">
+    <div style="grid-column:1/-1">
+      <div class="disclaimer">
+        <strong>⚠ FOR RESEARCH USE ONLY · NOT A MEDICAL DEVICE.</strong>
+        NeuraTriage EEG là prototype nghiên cứu, chưa được FDA / CE / Bộ Y tế Việt Nam cấp phép như thiết bị y tế. Output không thay thế chẩn đoán hình ảnh (CT/MRI) hoặc đánh giá lâm sàng. Mọi quyết định điều trị phải dựa trên đánh giá của bác sĩ có chuyên môn. Dữ liệu hiển thị trong demo là mock - không phải bệnh nhân thật.
+      </div>
+    </div>
+  </div>
+  <div class="foot-bottom">
+    <span>© 2026 NeuraTriage EEG · v0.4.2</span>
+    <span>ApFu-MFDFA-TPELGBM-RT</span>
+  </div>
+</footer>
+
+<!-- ============ SPHERE SCRIPT ============ -->
+<script>
+(function(){
+  const cv=document.getElementById("sphere");
+  if(!cv) return;
+  const ctx=cv.getContext("2d");
+  let W=0,H=0,DPR=Math.min(2,window.devicePixelRatio||1);
+  function resize(){const r=cv.getBoundingClientRect();W=r.width;H=r.height;cv.width=W*DPR;cv.height=H*DPR;ctx.setTransform(DPR,0,0,DPR,0,0);}
+  resize();
+  new ResizeObserver(resize).observe(cv);
+
+  // Build 18 EEG-like channel positions on a sphere (10-20 system inspired)
+  const N_CH=18, N_RING=24;
+  const channels=[];
+  for(let i=0;i<N_CH;i++){
+    const lat=(i%6)/5*Math.PI*0.7-Math.PI*0.35;
+    const lon=(Math.floor(i/6))/3*Math.PI*2+i*0.3;
+    channels.push({lat,lon,phase:Math.random()*Math.PI*2,freq:1+Math.random()*3});
+  }
+
+  let t0=performance.now();
+  // Class state — cycles through HS / IS / NS for cinematic effect
+  const classes=[
+    {key:"HS",label:"HEMORRHAGIC",color:"oklch(0.65 0.22 25)",col2:"oklch(0.45 0.18 25 / 0.5)",p:0.78,sub:"ALERT · HEMORRHAGIC"},
+    {key:"IS",label:"ISCHEMIC",color:"oklch(0.78 0.15 75)",col2:"oklch(0.55 0.16 75 / 0.5)",p:0.71,sub:"ALERT · ISCHEMIC"},
+    {key:"NS",label:"NO STROKE",color:"oklch(0.72 0.16 152)",col2:"oklch(0.55 0.16 152 / 0.5)",p:0.83,sub:"MONITOR · STABLE"},
+  ];
+  let curIdx=0,nextIdx=1,blend=0;
+  const valEl=document.getElementById("sphereVal");
+  const subEl=document.getElementById("sphereSub");
+  const clsEl=document.getElementById("sphereCls");
+
+  function lerpColor(a,b,t){return t<0.5?a:b}
+
+  function frame(){
+    const now=performance.now(),dt=(now-t0)/1000;
+    // cycle every 5s, transition over 1s
+    const cyc=(dt%5)/5;
+    if(cyc>0.8){blend=(cyc-0.8)/0.2;}else{blend=0;curIdx=Math.floor(dt/5)%classes.length;nextIdx=(curIdx+1)%classes.length;}
+    const C=classes[curIdx],Cn=classes[nextIdx];
+    const probDisp=C.p+(Cn.p-C.p)*blend*0.3+Math.sin(dt*0.7)*0.015;
+    const colorNow=blend>0.5?Cn.color:C.color;
+    const labelNow=blend>0.5?Cn.label:C.label;
+    const subNow=blend>0.5?Cn.sub:C.sub;
+
+    // update readout
+    valEl.innerHTML=probDisp.toFixed(2)+'<span class="pct">·'+(blend>0.5?Cn.key:C.key)+'</span>';
+    valEl.style.color=colorNow;
+    subEl.textContent=`SQI ${(0.91+Math.sin(dt*0.4)*0.04).toFixed(2)} · 256 Hz · 18 ch`;
+    clsEl.style.color=colorNow;
+    clsEl.style.borderColor=blend>0.5?Cn.col2:C.col2;
+    clsEl.childNodes[clsEl.childNodes.length-1].textContent=" "+subNow;
+
+    // draw
+    ctx.clearRect(0,0,W,H);
+    const cx=W/2,cy=H/2,R=Math.min(W,H)*0.36;
+
+    // Outer halo
+    const g=ctx.createRadialGradient(cx,cy,R*0.5,cx,cy,R*1.6);
+    g.addColorStop(0,colorNow.replace(")"," / 0.18)").replace("oklch","oklch"));
+    g.addColorStop(1,"transparent");
+    ctx.fillStyle=g;
+    ctx.fillRect(0,0,W,H);
+
+    // Concentric rings (probability "horizon")
+    for(let r=0;r<6;r++){
+      const rr=R*(0.6+r*0.12);
+      ctx.beginPath();
+      ctx.arc(cx,cy,rr,0,Math.PI*2);
+      ctx.strokeStyle=`oklch(0.4 0.05 250 / ${0.18-r*0.025})`;
+      ctx.lineWidth=1;
+      ctx.stroke();
+    }
+
+    // Rotating wireframe sphere — latitudes and longitudes
+    const yaw=dt*0.18,pitch=Math.sin(dt*0.13)*0.18;
+    function project(lat,lon){
+      const x=Math.cos(lat)*Math.sin(lon+yaw);
+      const y=Math.sin(lat)*Math.cos(pitch)-Math.cos(lat)*Math.cos(lon+yaw)*Math.sin(pitch);
+      const z=Math.sin(lat)*Math.sin(pitch)+Math.cos(lat)*Math.cos(lon+yaw)*Math.cos(pitch);
+      return {x:cx+x*R,y:cy+y*R,z};
+    }
+    // longitudes
+    ctx.lineWidth=0.8;
+    for(let i=0;i<10;i++){
+      const lon=i/10*Math.PI*2;
+      ctx.beginPath();
+      for(let j=0;j<=40;j++){
+        const lat=-Math.PI/2+j/40*Math.PI;
+        const p=project(lat,lon);
+        const alpha=0.06+Math.max(0,p.z)*0.18;
+        ctx.strokeStyle=`oklch(0.6 0.04 250 / ${alpha.toFixed(3)})`;
+        if(j===0) ctx.moveTo(p.x,p.y); else { ctx.lineTo(p.x,p.y); }
+      }
+      ctx.stroke();
+    }
+    // latitudes
+    for(let i=1;i<7;i++){
+      const lat=-Math.PI/2+i/7*Math.PI;
+      ctx.beginPath();
+      for(let j=0;j<=60;j++){
+        const lon=j/60*Math.PI*2;
+        const p=project(lat,lon);
+        const alpha=0.05+Math.max(0,p.z)*0.15;
+        ctx.strokeStyle=`oklch(0.6 0.04 250 / ${alpha.toFixed(3)})`;
+        if(j===0) ctx.moveTo(p.x,p.y); else { ctx.lineTo(p.x,p.y); }
+      }
+      ctx.stroke();
+    }
+
+    // 18 EEG channel nodes — pulsate with sine
+    for(const ch of channels){
+      const p=project(ch.lat,ch.lon);
+      if(p.z<-0.2) continue;
+      const pulse=Math.sin(dt*ch.freq+ch.phase)*0.5+0.5;
+      const radius=2.2+pulse*2.4*(0.5+Math.max(0,p.z)*0.5);
+      // glow
+      const gg=ctx.createRadialGradient(p.x,p.y,0,p.x,p.y,radius*4);
+      gg.addColorStop(0,colorNow.replace(")"," / 0.6)"));
+      gg.addColorStop(1,"transparent");
+      ctx.fillStyle=gg;
+      ctx.beginPath();ctx.arc(p.x,p.y,radius*4,0,Math.PI*2);ctx.fill();
+      // core
+      ctx.fillStyle=colorNow;
+      ctx.beginPath();ctx.arc(p.x,p.y,radius,0,Math.PI*2);ctx.fill();
+    }
+
+    // Sweeping wave — circular probability sweep
+    const sweepAng=(dt*0.6)%(Math.PI*2);
+    ctx.beginPath();
+    for(let a=0;a<=Math.PI*2;a+=0.04){
+      const dist=Math.abs(((a-sweepAng+Math.PI*3)%(Math.PI*2))-Math.PI);
+      const amp=Math.exp(-dist*2.5)*0.05;
+      const rr=R+amp*R+Math.sin(a*8+dt*2)*1.5;
+      const x=cx+Math.cos(a)*rr,y=cy+Math.sin(a)*rr;
+      if(a===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+    }
+    ctx.closePath();
+    ctx.strokeStyle=colorNow.replace(")"," / 0.7)");
+    ctx.lineWidth=1.3;
+    ctx.stroke();
+
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+})();
+
+// Feature card mini-waveforms
+(function(){
+  const g=document.getElementById("featWaves");
+  const probPath=document.getElementById("featProb");
+  if(!g) return;
+  const W=360,H=180,LANES=6;
+  const traces=[];
+  for(let i=0;i<LANES;i++){
+    const y=20+i*22;
+    const path=document.createElementNS("http://www.w3.org/2000/svg","path");
+    path.setAttribute("fill","none");
+    path.setAttribute("stroke","oklch(0.5 0.05 250 / 0.6)");
+    path.setAttribute("stroke-width","1");
+    g.appendChild(path);
+    traces.push({path,y,phase:Math.random()*10,freq:0.04+Math.random()*0.03});
+  }
+  let t=0;
+  setInterval(()=>{
+    t+=1;
+    for(const tr of traces){
+      let d="";
+      for(let x=0;x<=W;x+=2){
+        const v=Math.sin(x*tr.freq+t*0.08+tr.phase)*5+Math.sin(x*0.18+t*0.1+tr.phase)*3+Math.sin(x*0.4+t*0.25)*1.5;
+        d+=(x===0?"M":"L")+x+","+(tr.y+v).toFixed(1)+" ";
+      }
+      tr.path.setAttribute("d",d);
+    }
+    // probability curve at bottom
+    let pd=`M0,${H} `;
+    for(let x=0;x<=W;x+=4){
+      const phase=t*0.04;
+      const ramp=Math.max(0,(x/W-0.5)*2);
+      const v=H-30-ramp*ramp*100-Math.sin(x*0.07+phase)*5;
+      pd+=`L${x},${v.toFixed(1)} `;
+    }
+    pd+=`L${W},${H} Z`;
+    probPath.setAttribute("d",pd);
+  },50);
+})();
+</script>
+
+<!-- ============ SCROLL REVEAL ============ -->
+<script>
+(function(){
+  if (!("IntersectionObserver" in window)) {
+    document.querySelectorAll(".reveal, .reveal-stagger").forEach(el => el.classList.add("in"));
+    return;
+  }
+  const io = new IntersectionObserver((entries) => {
+    entries.forEach(e => {
+      if (e.isIntersecting) {
+        e.target.classList.add("in");
+        io.unobserve(e.target);
+      }
+    });
+  }, { threshold: 0.18, rootMargin: "0px 0px -8% 0px" });
+  document.querySelectorAll(".reveal, .reveal-stagger").forEach(el => io.observe(el));
+})();
+</script>
+
+<!-- ============ PROBLEM MARQUEE ROTATION ============ -->
+<script>
+(function(){
+  // marquee removed
+})();
+</script>
+
+</body>
+</html>

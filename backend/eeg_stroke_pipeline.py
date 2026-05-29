@@ -83,6 +83,7 @@ import joblib
 import numpy as np
 import pandas as pd
 from scipy import optimize, signal, stats
+from scipy.spatial.distance import cdist as _scipy_cdist
 from scipy.special import softmax
 from sklearn.metrics import (
     f1_score,
@@ -340,8 +341,15 @@ class OnlineEEGPreprocessor:
         self.config = config
         self.sos = _build_filter_sos(fs, config, include_bandpass=True)
         self.zi = [signal.sosfilt_zi(self.sos) * 0.0 for _ in range(n_channels)]
+        # Separate notch-only path for SQI. Training computes SQI on
+        # preprocess_eeg_for_sqi() output (notch only, keeps the 35-70 Hz band,
+        # no CAR). Computing online SQI on the band-passed + CAR feature signal
+        # drifts the SQI features away from the trained distribution, so we keep
+        # a parallel causal notch-only filter dedicated to SQI.
+        self.sos_sqi = _build_filter_sos(fs, config, include_bandpass=False)
+        self.zi_sqi = [signal.sosfilt_zi(self.sos_sqi) * 0.0 for _ in range(n_channels)]
 
-    def transform(self, chunk: np.ndarray) -> np.ndarray:
+    def _prepare(self, chunk: np.ndarray) -> np.ndarray:
         chunk = np.asarray(chunk, dtype=float)
         if chunk.shape[0] != self.n_channels:
             raise ValueError("Chunk channel count mismatch.")
@@ -349,13 +357,28 @@ class OnlineEEGPreprocessor:
             chunk = fill_nan_channels(chunk)
         if self.config.clip_artifacts:
             chunk = clip_channel_outliers(chunk, self.config.artifact_clip_mad_factor)
+        return chunk
+
+    def transform(self, chunk: np.ndarray) -> np.ndarray:
+        """Feature-domain signal: notch + bandpass (+ optional CAR)."""
+        return self.transform_with_sqi(chunk)[0]
+
+    def transform_with_sqi(self, chunk: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+        """Return (feature_signal, sqi_signal).
+
+        feature_signal = notch + bandpass (+CAR) for entropy/MFDFA.
+        sqi_signal     = notch only, no CAR — matches preprocess_eeg_for_sqi so
+                         online SQI features align with training.
+        """
+        chunk = self._prepare(chunk)
         out = np.empty_like(chunk)
+        sqi = np.empty_like(chunk)
         for ch in range(self.n_channels):
-            filtered, self.zi[ch] = signal.sosfilt(self.sos, chunk[ch], zi=self.zi[ch])
-            out[ch] = filtered
+            out[ch], self.zi[ch] = signal.sosfilt(self.sos, chunk[ch], zi=self.zi[ch])
+            sqi[ch], self.zi_sqi[ch] = signal.sosfilt(self.sos_sqi, chunk[ch], zi=self.zi_sqi[ch])
         if self.config.rereference.lower() == "car":
             out = out - out.mean(axis=0, keepdims=True)
-        return out
+        return out, sqi
 
 
 class RealTimeStrokeDetector:
@@ -375,6 +398,7 @@ class RealTimeStrokeDetector:
         self.mfdfa_len = int(round(self.config.mfdfa_window_sec * self.fs))
         self.step_len = int(round(self.config.entropy_step_sec * self.fs))
         self.buffer = np.zeros((len(self.channels), 0), dtype=float)
+        self.sqi_buffer = np.zeros((len(self.channels), 0), dtype=float)
         self.total_samples = 0
         self.next_emit_sample = self.mfdfa_len
         self.smooth_probs: Optional[np.ndarray] = None
@@ -391,13 +415,17 @@ class RealTimeStrokeDetector:
     def update(self, chunk: np.ndarray) -> List[Dict[str, Any]]:
         chunk = np.asarray(chunk, dtype=float)
         if self.preprocessor is not None:
-            chunk = self.preprocessor.transform(chunk)
+            chunk, sqi_chunk = self.preprocessor.transform_with_sqi(chunk)
+        else:
+            sqi_chunk = chunk
         self.buffer = np.concatenate([self.buffer, chunk], axis=1)
+        self.sqi_buffer = np.concatenate([self.sqi_buffer, sqi_chunk], axis=1)
         self.total_samples += chunk.shape[1]
 
         keep = self.mfdfa_len + 2 * self.step_len
         if self.buffer.shape[1] > keep:
             self.buffer = self.buffer[:, -keep:]
+            self.sqi_buffer = self.sqi_buffer[:, -keep:]
 
         events: List[Dict[str, Any]] = []
         while self.total_samples >= self.next_emit_sample:
@@ -408,12 +436,14 @@ class RealTimeStrokeDetector:
 
             entropy_window = self.buffer[:, end_rel - self.entropy_len : end_rel]
             mfdfa_window = self.buffer[:, end_rel - self.mfdfa_len : end_rel]
+            sqi_window = self.sqi_buffer[:, end_rel - self.entropy_len : end_rel]
             feats = build_feature_row_from_windows(
                 entropy_window=entropy_window,
                 mfdfa_window=mfdfa_window,
                 channels=self.channels,
                 fs=self.fs,
                 config=self.config,
+                sqi_window=sqi_window,
             )
             t_sec = self.next_emit_sample / self.fs
             event = self._infer_from_feature_dict(feats, timestamp_sec=t_sec)
@@ -746,8 +776,8 @@ def embed_sequence(x: np.ndarray, m: int) -> np.ndarray:
 
 
 def chebyshev_pairwise(emb: np.ndarray) -> np.ndarray:
-    diff = np.abs(emb[:, None, :] - emb[None, :, :])
-    return diff.max(axis=2)
+    # scipy cdist is ~15x faster than numpy broadcasting for this pairwise op
+    return _scipy_cdist(emb, emb, metric="chebyshev")
 
 
 def approximate_entropy(x: np.ndarray, m: int = 2, r_factor: float = 0.2) -> float:

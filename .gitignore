@@ -20,11 +20,33 @@ Thumbs.db
 
 # Project runtime data
 data/uploads/
+data/reports/
+data/*.db
 data/sessions.db
 out/
 .mplconfig/
 *.log
+logs/
+
+# Local research datasets / heavy generated outputs
+21679035/
+dataset_healthy/
+dataset_real/
+dataset_ischemic/
+dataset_npz/
+dataset_hemorrhagic/hemorrhagic.csv
+mne_data/
+results/
+models_store/
+backend/models/*backup*.joblib
+
+# Tunnel binaries (cloudflared, ngrok) — too large to commit
+tools/
 
 # Secrets
 .env
 .env.local
+.env.*.local
+
+# Vercel
+.vercel/

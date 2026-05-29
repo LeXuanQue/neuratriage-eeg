@@ -1,0 +1,5 @@
+patient_id,label,path,fs
+uclh_p3_big_ich,hemorrhagic,C:\Users\Admin\eeg-stroke-app\dataset_hemorrhagic\p3_td1_preinject_10s.npz,256.0
+uclh_p5_small_ich,hemorrhagic,C:\Users\Admin\eeg-stroke-app\dataset_hemorrhagic\p5_td1_preinject_20s.npz,256.0
+uclh_p6a_big_ich,hemorrhagic,C:\Users\Admin\eeg-stroke-app\dataset_hemorrhagic\p6a_td1_preinject_20s.npz,256.0
+uclh_p11_big_ich,hemorrhagic,C:\Users\Admin\eeg-stroke-app\dataset_hemorrhagic\p11_td1_preinject_8s.npz,256.0

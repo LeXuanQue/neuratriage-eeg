@@ -1,119 +1,133 @@
-# NeuraTriage EEG — Stroke Early Warning
+# NeuraTriage EEG
 
-Hệ thống cảnh báo sớm đột quỵ dựa trên tín hiệu EEG. Repo gồm hai phần độc lập:
+Research prototype for EEG-based stroke triage. The active app is a FastAPI
+backend that serves the static React/Babel frontend and exposes REST/WebSocket
+APIs for login, live stream/replay, upload, inference, patients, devices,
+alerts, dashboard, and PDF reports.
 
-- **`frontend/`** — Giao diện React (mockup + login screen, deploy lên Vercel).
-- **`backend/`** — Pipeline Python (LightGBM + MFDFA + ApEn/FuEn) + Flask app.
-- **`docs/`** — Research notes.
+This is a research prototype, not a medical device.
 
-## Cấu trúc
+## Current Evidence Boundary
 
-```
-eeg-stroke-app/
-├── frontend/         ← React 18 + Babel standalone (xem frontend/README.md)
-├── backend/          ← Python research pipeline + Flask app
-├── docs/             ← research_guide.md
-├── README.md
-└── vercel.json       ← Vercel config (deploys frontend/ as static site)
-```
+The UIST demo target is triage-support interaction, not diagnosis. Current
+validated evidence is binary ischemic-vs-non-stroke using 50 ischemic EEG records
+and 50 healthy resting-baseline records. Four UCLH hemorrhagic patients
+(`P3`, `P5`, `P6A`, `P11`) have been converted as exploratory evidence, but
+validated 3-class performance still needs at least one more HS patient for the
+planned 5-fold patient-level CV protocol.
 
----
+See `docs/uist_evidence.md` for the safe claim language, metrics, and
+limitations.
 
-## Frontend
+## Active Runtime
 
-Xem chi tiết ở [`frontend/README.md`](frontend/README.md).
+- `backend/app/` - active FastAPI backend (serves everything on port 8501).
+- `backend/frontend/app.html` - active command-center UI.
+- `backend/frontend/index.html` - redirect entrypoint to `app.html`.
+- `backend/frontend/app/` and `backend/frontend/shared/` - active screens/helpers.
+- `backend/eeg_stroke_pipeline.py` - EEG feature extraction, inference,
+  training, and realtime detector logic.
+- `backend/models/model.joblib` - small demo model expected by the prototype.
 
-Mở local:
+Legacy files are still kept for reference:
 
-```bash
-cd frontend
-python -m http.server 8000
-# → http://localhost:8000/
-```
+- `legacy/api/index.py` - old Flask API, no longer the default runtime.
+- `legacy/app.py` - old local research workbench.
+- `backend/frontend/components/`, `backend/frontend/screens/`, `backend/frontend/lib/` - old UI slices.
 
-Production: auto-deploy lên Vercel khi push vào `main`.
-
----
-
-## Backend
-
-Pipeline nghiên cứu Python (`backend/eeg_stroke_pipeline.py`) + Flask app
-(`backend/app.py`).
-
-### Pipeline
+## Project Layout
 
 ```text
-raw EEG
-→ channel ordering + preprocessing
-→ 1-second ApEn/FuEn entropy features
-→ 4-second MFDFA features
-→ SQI quality features
-→ LightGBM classifier
-→ Optuna/TPE hyperparameter search
-→ probability calibration
-→ offline inference or realtime alert logic
+eeg-stroke-app/
+  backend/
+    app/                  FastAPI app, routers, services, SQLAlchemy models
+    frontend/             static UI (served by FastAPI on the same port)
+      app.html            active command-center entrypoint
+      app/                React screens, shell, visualizations
+      shared/             API client, WebSocket, live-data helpers
+      landing.html        public landing page
+    models/               demo model artifacts
+    tests/                FastAPI backend tests
+    eeg_stroke_pipeline.py
+    run_app.bat           local FastAPI launcher
+  tests/                  top-level API contract tests
+  Dockerfile
+  docker-compose.yml
+  requirements.txt
 ```
 
-### Data format
+Local datasets, SQLite databases, uploads, reports, logs, and generated result
+folders are ignored by Git and Docker.
 
-Manifest CSV:
+## Run Locally
 
-```csv
-patient_id,label,path,fs
-sub-01,non-stroke,C:\path\to\sub-01.npz,256
-sub-02,ischemic,C:\path\to\sub-02.npz,256
-sub-03,hemorrhagic,C:\path\to\sub-03.npz,256
+From the repo root:
+
+```bat
+.venv\Scripts\python.exe -m pip install -r requirements.txt
+backend\run_app.bat
 ```
 
-Labels: `non-stroke`, `ischemic`, `hemorrhagic` (or numeric `0`, `1`, `2`).
+Open:
 
-`.npz` file keys:
+```text
+http://127.0.0.1:8501/
+```
 
-- `data` — float array `(n_channels, n_samples)`
-- `channels` — channel names
-- `fs` — sampling rate (optional if manifest có `fs`)
-
-`.npy` file — float array `(n_channels, n_samples)` theo thứ tự kênh mặc định
-trong pipeline.
-
-### Chạy backend
-
-Có sẵn `.venv` tươi; batch file dùng local `.venv` khi sẵn sàng, fallback
-sang `C:\Users\Admin\EEG\.venv` nếu local chưa cài đủ deps.
+Direct backend command:
 
 ```bat
 cd backend
-run_app.bat
+..\.venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8501
 ```
 
-Mở: <http://127.0.0.1:8501>
+Demo login:
 
-Trực tiếp:
+```text
+doctor@neuratriage.com / demo1234
+admin@neuratriage.com  / demo1234
+```
+
+## Test
 
 ```bat
-C:\Users\Admin\EEG\.venv\Scripts\python.exe backend\app.py --host 127.0.0.1 --port 8501
+.venv\Scripts\python.exe -m pytest -q
 ```
 
-Cài deps vào `.venv` riêng cho project:
+## Docker
 
 ```bat
-.venv\Scripts\python.exe -m pip install -r backend\requirements.txt
+docker compose up --build
 ```
 
-### Smoke-test defaults
+Then open:
 
-- Model: `C:\Users\Admin\EEG\testdata\pipeline_smoke_npz\model_smoke.joblib`
-- Manifest: `C:\Users\Admin\EEG\testdata\pipeline_smoke_npz\manifest.csv`
-- EEG file: `C:\Users\Admin\EEG\testdata\pipeline_smoke_npz\sub-01.npz`
+```text
+http://127.0.0.1:8501/
+```
 
-Thay bằng output thí nghiệm thực khi chạy nghiên cứu.
+## Deploy Direction
 
----
+The full prototype should be deployed as a Docker/FastAPI app on Render,
+Railway, Fly.io, a VPS, or similar. `vercel.json` is kept only for a static
+frontend preview and does not deploy the FastAPI/ML backend.
 
-## Trạng thái
+See [`docs/deploy.md`](docs/deploy.md) for the step-by-step deploy guide
+(secrets, single-worker requirement, persistent volume, datasets, SendGrid).
 
-- Frontend là **mockup** với mock auth (lưu `localStorage`). Chưa nối API
-  backend thật — login chỉ lưu role/layout, click "Sign in" cho qua.
-- Backend chạy độc lập trên localhost, chưa expose lên internet.
-- Tích hợp frontend ↔ backend là bước tiếp theo (thay `handleLogin` +
-  fetch các endpoint từ Flask).
+## Core Flow
+
+```text
+Login
+  -> Dashboard
+  -> Live EEG WebSocket or replay NPZ
+  -> Alert creation / ack / dismiss
+  -> Upload NPZ
+  -> Offline inference
+  -> Patient and device records
+  -> Weekly PDF report generation
+```
+
+Uploads accept inference-ready `.npz` or `.npy` files. Raw `.edf`, `.bdf`, and
+`.fif` files must be converted first with the converter scripts before demo
+inference.
