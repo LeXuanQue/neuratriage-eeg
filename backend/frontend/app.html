@@ -40,6 +40,7 @@ window.addEventListener('unhandledrejection', function(e) {
 <script type="text/babel" src="app/screen-live.jsx"></script>
 <script type="text/babel" src="app/screens-clinical.jsx"></script>
 <script type="text/babel" src="app/screens-tools.jsx"></script>
+<script type="text/babel" src="app/screen-demo.jsx"></script>
 <script type="text/babel" src="app/tweaks-panel.jsx"></script>
 
 <script type="text/babel">
@@ -75,7 +76,7 @@ function LoginScreen({ onLogin }) {
           <div style={{fontSize:28, fontWeight:700, color:"var(--ink)", letterSpacing:"-0.5px",
                        fontFamily:"var(--font-serif)"}}>NeuraTriage</div>
           <div style={{fontSize:12, color:"var(--ink-3)", marginTop:4, letterSpacing:"0.06em",
-                       textTransform:"uppercase"}}>EEG Stroke Early Warning</div>
+                       textTransform:"uppercase"}}>EEG Triage Support</div>
         </div>
         <form onSubmit={handleSubmit}>
           <div style={{marginBottom:14}}>
@@ -114,7 +115,7 @@ function LoginScreen({ onLogin }) {
 }
 
 const TWEAKS = /*EDITMODE-BEGIN*/{
-  "scenario": "HS",
+  "scenario": "IS",
   "lang": "vi",
   "animated": true,
   "channelCount": 18,
@@ -125,15 +126,26 @@ const TWEAKS = /*EDITMODE-BEGIN*/{
 
 function App() {
   const [active, setActive] = useState("live");
+  const [deviceStream, setDeviceStream] = useState(false);
   const [tw, setTweak] = window.useTweaks
     ? window.useTweaks(TWEAKS)
     : [TWEAKS, () => {}];
 
-  const [theme, setTheme] = window.useTheme();
+  const [theme, setTheme] = window.useTheme ? window.useTheme() : ["auto", () => {}];
   const [cmdkOpen, setCmdkOpen] = useState(false);
 
   const [apiBase, setApiBase] = useState(() => window.LiveData?.getApiBase() || "");
   const [replayCases, setReplayCases] = useState([]);
+  const [demoScenarios, setDemoScenarios] = useState([]);
+  const [demoState, setDemoState] = useState({loading: true, error: null});
+  const [demoScenario, setDemoScenario] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("neuratriage_demo_scenario") || "null"); } catch(e){ return null; }
+  });
+  const [demoRunId, setDemoRunId] = useState(0);
+  // Loop the recording so a display screen never runs dry. Scenarios can ask
+  // for it; the operator can override it from the live banner.
+  const [loopOverride, setLoopOverride] = useState(null);
+  const demoRef = useRef(null);
   const [selectedPatientId, setSelectedPatientId] = useState(() => {
     try { return localStorage.getItem("neuratriage_selected_patient_id") || ""; } catch(e){ return ""; }
   });
@@ -153,6 +165,25 @@ function App() {
       }
     }
     loadCases();
+    return () => { alive = false; };
+  }, [apiBase]);
+  useEffect(() => {
+    let alive = true;
+    async function loadDemoScenarios() {
+      if (!window.NTApi?.getToken?.()) return;
+      setDemoState({loading: true, error: null});
+      try {
+        const rows = await window.NTApi.get("/api/demo/scenarios");
+        if (!alive) return;
+        setDemoScenarios(Array.isArray(rows) ? rows : []);
+        setDemoState({loading: false, error: null});
+      } catch (e) {
+        if (!alive) return;
+        setDemoScenarios([]);
+        setDemoState({loading: false, error: e});
+      }
+    }
+    loadDemoScenarios();
     return () => { alive = false; };
   }, [apiBase]);
   useEffect(() => {
@@ -187,7 +218,7 @@ function App() {
       if (meta && e.key.toLowerCase() === "k") { e.preventDefault(); setCmdkOpen(v => !v); }
       else if (meta && e.key === ",") { e.preventDefault(); setActive("settings"); }
       else if (!meta && !e.altKey && !e.shiftKey && /^[1-9]$/.test(e.key) && document.activeElement?.tagName !== "INPUT" && document.activeElement?.tagName !== "TEXTAREA") {
-        const map = ["live","dashboard","patient","alerts","device","setup","insights","reports","settings"];
+        const map = ["demo","live","dashboard","patient","alerts","device","setup","insights","reports","settings"];
         const i = parseInt(e.key, 10) - 1;
         if (map[i]) { e.preventDefault(); setActive(map[i]); }
       }
@@ -202,6 +233,16 @@ function App() {
   useEffect(() => {
     const onNav = (e) => {
       const tab = e.detail && e.detail.tab;
+      const source = e.detail && e.detail.source;
+      // "device" → stream the live headband over WS; "replay" → dataset replay.
+      if (source === "device") { setDeviceStream(true); setTweak("streamMode", "ws"); }
+      else if (source === "replay") {
+        setDeviceStream(false);
+        // Without a selected case the live screen would wait forever, so fall
+        // back to the first demo scenario.
+        const api = demoRef.current;
+        if (api && !api.activeId && !api.replayNpz && api.scenarios.length) api.start(api.scenarios[0]);
+      }
       if (typeof tab === "string") setActive(tab);
     };
     window.addEventListener("nt:nav", onNav);
@@ -214,13 +255,60 @@ function App() {
   // Each hook is cheap when its mode is inactive (the inactive one still
   // opens a connection — the toggle is for "what to display", not "what to
   // run"). We bias toward WS mode if the bundle is loaded.
+  // Must be computed BEFORE useWSStream below: this is compiled by Babel, so a
+  // `const` declared further down would read as undefined here rather than throw.
+  const loopReplay = loopOverride == null
+    ? !!(demoScenario && demoScenario.loop)
+    : !!loopOverride;
   const pollFrame = window.useLiveData(tw.scenario);
   const channels = window.pickChannels(tw.channelCount);
   const wsFrame = window.useWSStream
-    ? window.useWSStream(tw.scenario, tw.replayNpz, selectedPatientId, channels)
+    ? window.useWSStream(tw.scenario, deviceStream ? null : tw.replayNpz, selectedPatientId, channels, deviceStream, demoRunId, !!(demoScenario && demoScenario.artifact), loopReplay)
     : pollFrame;
-  const frame = tw.streamMode === "ws" && window.useWSStream ? wsFrame : pollFrame;
+  const frame = (deviceStream || tw.streamMode === "ws") && window.useWSStream ? wsFrame : pollFrame;
   const animated = tw.animated !== false;
+
+  // Demo mode: a scenario only decides *which stored recording* to replay and
+  // whether to inject an artifact. Everything shown afterwards still comes from
+  // the backend detector over the same WebSocket a real device would use.
+  function startDemo(scenario) {
+    if (!scenario) return;
+    setDemoScenario(scenario);
+    try { localStorage.setItem("neuratriage_demo_scenario", JSON.stringify(scenario)); } catch(e){}
+    setDeviceStream(false);
+    setTweak({streamMode: "ws", replayNpz: scenario.replay_case});
+    setLoopOverride(null);          // each run starts from the scenario default
+    setDemoRunId(v => v + 1);
+    setActive("live");
+  }
+
+  function toggleLoop() {
+    setLoopOverride(v => !(v == null ? !!(demoScenario && demoScenario.loop) : v));
+  }
+
+  function stopDemo() {
+    setDemoScenario(null);
+    try { localStorage.removeItem("neuratriage_demo_scenario"); } catch(e){}
+    setTweak("replayNpz", "");
+    setDemoRunId(v => v + 1);
+  }
+
+  // The scenario's artifact setting is handed to useWSStream and armed on the
+  // socket's own open handler, so it survives the reconnect a new run causes.
+  const demoApi = {
+    scenarios: demoScenarios,
+    loading: demoState.loading,
+    error: demoState.error,
+    scenario: demoScenario,
+    activeId: demoScenario ? demoScenario.id : null,
+    replayNpz: tw.replayNpz || "",
+    start: startDemo,
+    stop: stopDemo,
+    rerun: () => startDemo(demoScenario),
+    loop: loopReplay,
+    toggleLoop,
+  };
+  demoRef.current = demoApi;
 
   // Track session start time when WS connects to backend
   const sessionStartRef = useRef(null);
@@ -253,7 +341,11 @@ function App() {
     connection: hasMeasuredRaw ? frame.connection : "waiting",
   };
 
+  // A browser that pairs a fresh app.html with a cached older i18n.js used to
+  // die here on the first missing key. Detect that instead of throwing.
+  const i18nStale = !t.demo || !t.deviceLink || !t.modelInfo || !t.nd;
   const titles = {
+    demo: t.demo?.title || "Demo",
     live: t.live.title,
     dashboard: t.nav.dashboard,
     patient: t.nav.patient,
@@ -266,6 +358,7 @@ function App() {
   };
 
   const subtitles = {
+    demo: t.demo?.subtitle || "",
     live: hasMeasuredRaw
       ? `EEG ${frame.rawSource || "raw"} · ${frame.device?.sample_rate || 256} Hz`
       : (lang==="vi"?"Chưa có nguồn EEG đo được hoặc replay":"No measured/replay EEG source"),
@@ -281,9 +374,15 @@ function App() {
 
   const dom = frame.dominant;
   const sourceLabel = hasMeasuredRaw ? (tw.replayNpz ? "REPLAY" : (frame.rawSource || "RAW").toUpperCase()) : "NO EEG";
+  // The SQI gate can block a decision while model events keep arriving. Showing
+  // a class + probability there would claim something the detector refused to
+  // conclude, so the badge has to say "no decision" instead.
+  const decisionGated = hasModelEvent && frame.status === "no-decision";
   const liveBadge = active === "live"
     ? [
-        hasModelEvent
+        decisionGated
+          ? {kind:"neutral", live:false, icon:false, label:t.live.noDecision.toUpperCase()}
+          : hasModelEvent
           ? {kind:dom.toLowerCase(), live:true, icon:true, label:`${t.severityShort[dom]} · ${(frame.probs[dom]*100).toFixed(0)}%`}
           : {kind:"neutral", live:false, icon:false, label:hasMeasuredRaw ? (lang==="vi"?"CHỜ MODEL":"WAIT MODEL") : (lang==="vi"?"CHỜ EEG":"WAIT EEG")},
         {kind:"neutral", live:false, icon:false, label:sourceLabel},
@@ -297,7 +396,8 @@ function App() {
   const screen = (() => {
     const props = {frame, t, lang, channels, animated};
     switch(active) {
-      case "live": return <window.LiveMonitor {...props} accent={tw.accent}/>;
+      case "demo": return <window.DemoScreen {...props} demo={demoApi}/>;
+      case "live": return <window.LiveMonitor {...props} accent={tw.accent} demo={demoApi}/>;
       case "dashboard": return <window.DashboardScreen {...props}/>;
       case "patient": return <window.PatientScreen {...props}/>;
       case "alerts": return <window.AlertsScreen {...props}/>;
@@ -325,7 +425,7 @@ function App() {
           title={titles[active]}
           subtitle={subtitles[active]}
           badges={liveBadge}
-          mode={frame.connection==="backend" ? "BACKEND" : "DEMO"}
+          mode={demoScenario ? "DEMO" : frame.connection==="backend" ? "BACKEND" : "WAITING"}
           theme={theme} setTheme={setTheme}
           lang={lang} onLangToggle={onLangToggle}
           onSignOut={onSignOut}
@@ -335,6 +435,30 @@ function App() {
           {screen}
         </div>
       </main>
+
+      {i18nStale && (
+        <div role="alert" style={{
+          position:"fixed", inset:0, zIndex:9999, background:"var(--bg)",
+          display:"grid", placeItems:"center", padding:24,
+        }}>
+          <div style={{maxWidth:520, textAlign:"center"}}>
+            <div style={{fontSize:19, fontWeight:600, marginBottom:10}}>
+              Trình duyệt đang dùng tệp giao diện cũ
+            </div>
+            <p style={{fontSize:13, color:"var(--ink-2)", lineHeight:1.6, margin:"0 0 16px"}}>
+              Bản <code className="mono">shared/i18n.js</code> trong cache không khớp với
+              <code className="mono"> app.html</code> hiện tại, nên thiếu chuỗi hiển thị.
+              Tải lại trang là xong.
+            </p>
+            <button className="btn btn-primary" onClick={() => window.location.reload()}>
+              Tải lại trang
+            </button>
+            <div className="mono" style={{fontSize:10.5, color:"var(--ink-4)", marginTop:12}}>
+              Ctrl+Shift+R
+            </div>
+          </div>
+        </div>
+      )}
 
       <window.CommandPalette
         open={cmdkOpen}
@@ -348,7 +472,7 @@ function App() {
         <window.TweaksPanel title="Tweaks" defaultOpen={false}>
           <window.TweakSection title={lang==="vi"?"Kịch bản":"Scenario"}>
             <window.TweakRadio label={lang==="vi"?"Tín hiệu":"Signal"} value={tw.scenario}
-              options={[{value:"NS", label:"NS"},{value:"IS", label:"IS"},{value:"HS", label:"HS"}]}
+              options={[{value:"NS", label:"NS"},{value:"IS", label:"IS"}]}
               onChange={v => setTweak("scenario", v)}/>
             <window.TweakRadio label={lang==="vi"?"Nguồn dữ liệu":"Data source"} value={tw.streamMode || "polling"}
               options={[{value:"polling", label:lang==="vi"?"Sim · poll":"Sim · poll"},{value:"ws", label:lang==="vi"?"Backend · WS":"Backend · WS"}]}

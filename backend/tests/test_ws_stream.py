@@ -1,7 +1,7 @@
 """Integration test for /ws/stream/{session_id}.
 
-Pushes synthetic Brain-Life Focus+ EEG (4 channels @ 256 Hz, 8 seconds) through
-the WebSocket and asserts at least one `event` message comes back.
+Pushes synthetic Brain-Life Focus+ EEG (2 bipolar channels @ 256 Hz, 8 seconds)
+through the WebSocket and asserts at least one `event` message comes back.
 """
 from __future__ import annotations
 
@@ -42,7 +42,7 @@ def test_ws_stream_emits_events_for_brain_life_focus_plus() -> None:
     seconds = 6
     chunk_samples = fs
     session_id = uuid.uuid4().hex
-    device_channels = ["AF3", "AF4", "T7", "T8"]
+    device_channels = ["F3-T7", "F4-T8"]
 
     events: list[dict] = []
     errors: list[dict] = []
@@ -90,6 +90,52 @@ def test_ws_stream_emits_events_for_brain_life_focus_plus() -> None:
     assert "status" in first
     assert "sqi_total" in first
     assert "timestamp_sec" in first
+
+
+def test_ws_stream_artifact_toggle_drops_sqi_into_no_decision() -> None:
+    """Toggling artifact injection over the WS must tank SQI end-to-end so the
+    emitted events fall below the detector gate (the No-Decision demo control)."""
+    from eeg_stroke_pipeline import DEFAULT_CHANNELS
+
+    rng = np.random.default_rng(1)
+    fs = 256
+    chunk_samples = fs
+    session_id = uuid.uuid4().hex
+    # Full 18-ch montage so the chunk maps through (non-NaN) and SQI is meaningful.
+    device_channels = list(DEFAULT_CHANNELS)
+
+    events: list[dict] = []
+    acked = False
+
+    with TestClient(app) as client:
+        token = _token(client)
+        with client.websocket_connect(f"/ws/stream/{session_id}?token={token}") as ws:
+            ws.send_json({"type": "init", "device_channels": device_channels, "fs": fs})
+            assert ws.receive_json()["type"] == "ready"
+
+            # Turn the artifact on BEFORE any data, so every event reflects it.
+            ws.send_json({"type": "artifact", "on": True, "intensity": 1.0})
+
+            for _ in range(6):
+                chunk = rng.normal(size=(len(device_channels), chunk_samples)).tolist()
+                ws.send_json({"type": "data", "chunk": chunk})
+            ws.send_json({"type": "close"})
+
+            while True:
+                try:
+                    msg = ws.receive_json()
+                except Exception:
+                    break
+                if msg.get("type") == "event":
+                    events.append(msg)
+                elif msg.get("type") == "artifact_state":
+                    acked = acked or msg.get("on") is True
+
+    assert acked, "server did not acknowledge artifact_state on"
+    assert events, "expected inference events"
+    sqis = [e["sqi_total"] for e in events if e.get("sqi_total") is not None]
+    assert sqis, "expected sqi_total on events"
+    assert min(sqis) < 0.55, f"artifact should push SQI below the gate, got min {min(sqis):.3f}"
 
 
 def test_ws_stream_rejects_data_before_init() -> None:
@@ -145,6 +191,8 @@ def test_ws_stream_replay_emits_events() -> None:
                     break
                 if msg.get("type") == "event":
                     events.append(msg)
+                    ws.send_json({"type": "close"})
+                    break
                 elif msg.get("type") == "replay_done":
                     break
 
@@ -152,7 +200,7 @@ def test_ws_stream_replay_emits_events() -> None:
     first = events[0]
     assert "status" in first
     assert "probabilities_smooth" in first
-    assert len(first["probabilities_smooth"]) == 3
+    assert len(first["probabilities_smooth"]) >= 2
 
 
 def test_ws_stream_reports_channel_count_mismatch() -> None:

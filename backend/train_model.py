@@ -21,8 +21,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import pandas as pd
 import eeg_stroke_pipeline as pipeline
 
-BINARY_TABLE = ROOT / "dataset_real" / "feature_table_combined.csv"
-THREE_CLASS_TABLE = ROOT / "dataset_real" / "feature_table_combined_3class_exploratory.csv"
+BINARY_TABLE = ROOT / "dataset_ischemic" / "feature_table_combined.csv"
+THREE_CLASS_TABLE = ROOT / "dataset_ischemic" / "feature_table_combined_3class_exploratory.csv"
 OUT_PATH = ROOT / "backend" / "models" / "model.joblib"
 
 

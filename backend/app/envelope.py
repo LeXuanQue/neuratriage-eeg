@@ -72,5 +72,7 @@ async def validation_exception_handler(
 
 
 async def unhandled_exception_handler(_: Request, exc: Exception) -> JSONResponse:
+    # Log the full exception server-side, but never echo raw exception text
+    # (which can embed SQL, file paths, model internals) back to the client.
     logger.exception("Unhandled exception", exc_info=exc)
-    return err(str(exc) or "Internal server error", "INTERNAL_ERROR", 500)
+    return err("Internal server error", "INTERNAL_ERROR", 500)

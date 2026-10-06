@@ -17,9 +17,8 @@ window.I18N = {
     severity: {
       NS: "Không đột quỵ",
       IS: "Thiếu máu cục bộ",
-      HS: "Xuất huyết não",
     },
-    severityShort: { NS: "NS", IS: "IS", HS: "HS" },
+    severityShort: { NS: "NS", IS: "IS" },
     live: {
       title: "Theo dõi trực tiếp",
       riskScore: "Điểm rủi ro",
@@ -58,7 +57,7 @@ window.I18N = {
       vitals: "Sinh hiệu",
       onsetSymptoms: "Khởi phát triệu chứng",
       minsAgo: "phút trước",
-      explainShort: "Đóng góp đặc trưng (SHAP)",
+      explainShort: "Giải thích đặc trưng",
       ackedBy: "Ghi nhận bởi",
       cooldown: "Thời gian chờ",
       threshold: "Ngưỡng",
@@ -95,9 +94,8 @@ window.I18N = {
     severity: {
       NS: "No stroke",
       IS: "Ischemic stroke",
-      HS: "Hemorrhagic stroke",
     },
-    severityShort: { NS: "NS", IS: "IS", HS: "HS" },
+    severityShort: { NS: "NS", IS: "IS" },
     live: {
       title: "Live monitor",
       riskScore: "Risk score",
@@ -136,7 +134,7 @@ window.I18N = {
       vitals: "Vitals",
       onsetSymptoms: "Symptom onset",
       minsAgo: "min ago",
-      explainShort: "SHAP feature attribution",
+      explainShort: "Feature explanation",
       ackedBy: "Acknowledged by",
       cooldown: "Cooldown",
       threshold: "Threshold",

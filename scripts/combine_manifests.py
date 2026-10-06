@@ -2,29 +2,29 @@
 Merge feature tables into one combined CSV.
 
 Usage:
-  .venv/Scripts/python.exe combine_manifests.py
-  .venv/Scripts/python.exe combine_manifests.py --include-hemorrhagic
+  .venv/Scripts/python.exe scripts/combine_manifests.py
+  .venv/Scripts/python.exe scripts/combine_manifests.py --include-hemorrhagic
 
 Inputs:
-  dataset_real/feature_table_ischemic.csv    (label = 1 / ischemic)
-  dataset_healthy/feature_table_healthy.csv  (label = 0 / non-stroke)
+  dataset_ischemic/feature_table_ischemic.csv     (label = 1 / ischemic)
+  dataset_healthy/feature_table_healthy_109.csv   (label = 0 / non-stroke)
   dataset_hemorrhagic/feature_table_hemorrhagic.csv (label = 2 / hemorrhagic)
 
 Output:
-  dataset_real/feature_table_combined.csv
-  dataset_real/feature_table_combined_3class_exploratory.csv with --include-hemorrhagic
+  dataset_ischemic/feature_table_combined.csv
+  dataset_ischemic/feature_table_combined_3class_exploratory.csv with --include-hemorrhagic
 """
 import argparse
 import sys
 from pathlib import Path
 
-ROOT        = Path(__file__).resolve().parent
-ISCHEMIC_CSV = ROOT / "dataset_real"    / "feature_table_ischemic.csv"
-HEALTHY_CSV  = ROOT / "dataset_healthy" / "feature_table_healthy.csv"
+ROOT        = Path(__file__).resolve().parent.parent
+ISCHEMIC_CSV = ROOT / "dataset_ischemic" / "feature_table_ischemic.csv"
+HEALTHY_CSV  = ROOT / "dataset_healthy" / "feature_table_healthy_109.csv"
 HEMORRHAGIC_CSV = ROOT / "dataset_hemorrhagic" / "feature_table_hemorrhagic.csv"
-BINARY_OUT_CSV = ROOT / "dataset_real" / "feature_table_combined.csv"
+BINARY_OUT_CSV = ROOT / "dataset_ischemic" / "feature_table_combined.csv"
 THREE_CLASS_OUT_CSV = (
-    ROOT / "dataset_real" / "feature_table_combined_3class_exploratory.csv"
+    ROOT / "dataset_ischemic" / "feature_table_combined_3class_exploratory.csv"
 )
 
 
@@ -61,9 +61,15 @@ def main():
         default="",
         help="Optional output CSV. Defaults depend on --include-hemorrhagic.",
     )
+    parser.add_argument(
+        "--healthy-csv",
+        default=str(HEALTHY_CSV),
+        help="Non-stroke feature table to merge. Defaults to the 109-subject PhysioNet table.",
+    )
     args = parser.parse_args()
 
-    required = [ISCHEMIC_CSV, HEALTHY_CSV]
+    healthy_csv = Path(args.healthy_csv)
+    required = [ISCHEMIC_CSV, healthy_csv]
     if args.include_hemorrhagic:
         required.append(HEMORRHAGIC_CSV)
 
@@ -74,7 +80,7 @@ def main():
             sys.exit(1)
 
     ischemic = pd.read_csv(ISCHEMIC_CSV)
-    healthy  = pd.read_csv(HEALTHY_CSV)
+    healthy  = pd.read_csv(healthy_csv)
     frames = [ischemic, healthy]
     names = ["Ischemic", "Non-stroke"]
     if args.include_hemorrhagic:

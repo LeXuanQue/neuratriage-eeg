@@ -245,7 +245,7 @@ footer{padding:60px 36px 36px;background:#04060a;border-top:1px solid var(--line
     <div>
       <div class="hero-eyebrow"><span class="pip"></span><span>Real-time · 18 kênh · 256 Hz</span></div>
       <h1>Hỗ trợ triage EEG<br/>trong <em>vài giây</em>,<br/>không thay thế CT/MRI.</h1>
-      <p class="lead">NeuraTriage EEG kết hợp <span style="color:var(--ink)">ApEn · FuEn · MFDFA</span> với LightGBM để hiển thị mẫu nguy cơ EEG tại giường. Prototype hiện có bằng chứng binary ischemic-vs-non-stroke; HS mới ở mức exploratory 4 bệnh nhân, chưa validated 3-class.</p>
+      <p class="lead">NeuraTriage EEG kết hợp <span style="color:var(--ink)">ApEn · FuEn · MFDFA</span> với LightGBM để hiển thị mẫu nguy cơ EEG tại giường. Prototype hiện tập trung vào bài toán binary ischemic-vs-non-stroke; hemorrhagic được để cho hướng mở rộng tương lai.</p>
       <div class="hero-cta">
         <a class="btn btn-primary" href="app.html">Xem demo trực tiếp →</a>
         <a class="btn" href="#pipeline">Cách hoạt động</a>
@@ -256,8 +256,8 @@ footer{padding:60px 36px 36px;background:#04060a;border-top:1px solid var(--line
           <div class="lbl">Macro-F1 NS/IS + SQI</div>
         </div>
         <div class="hero-meta-item">
-          <div class="num">4</div>
-          <div class="lbl">HS exploratory patients</div>
+          <div class="num">4ch</div>
+          <div class="lbl">T3/T4/O1/O2 feasibility</div>
         </div>
         <div class="hero-meta-item">
           <div class="num">100</div>
@@ -270,11 +270,11 @@ footer{padding:60px 36px 36px;background:#04060a;border-top:1px solid var(--line
       <canvas id="sphere" class="sphere-canvas"></canvas>
       <div class="sphere-readout">
         <div class="label">EEG risk pattern</div>
-        <div class="val" id="sphereVal">0.78<span class="pct">·HS</span></div>
+        <div class="val" id="sphereVal">0.71<span class="pct">·IS</span></div>
         <div class="sub" id="sphereSub">SQI 0.91 · 256 Hz · 18 ch</div>
         <div class="cls" id="sphereCls" style="color:var(--red);border-color:oklch(0.45 0.18 25 / 0.5)">
           <span style="width:6px;height:6px;border-radius:50%;background:currentColor;align-self:center"></span>
-          DEMO · HS SIMULATION
+          DEMO · BINARY NS/IS
         </div>
       </div>
     </div>
@@ -386,8 +386,8 @@ footer{padding:60px 36px 36px;background:#04060a;border-top:1px solid var(--line
         <div class="ico">
           <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.4-4.4"/></svg>
         </div>
-        <h3>SHAP explainability</h3>
-        <p>Mỗi cảnh báo đi kèm top features đóng góp. Bác sĩ thấy rõ FuEn(T4), Δh MFDFA(Fp2)… đã đẩy quyết định.</p>
+        <h3>Minh bạch về model</h3>
+        <p>Màn hình luôn ghi model nào đang chạy, AUC trên nguồn dữ liệu chưa thấy và giới hạn đã biết. Giải thích từng đặc trưng (SHAP) chưa có — app không hiển thị con số giả.</p>
       </div>
       <div class="feature-card">
         <div class="ico">
@@ -431,7 +431,7 @@ footer{padding:60px 36px 36px;background:#04060a;border-top:1px solid var(--line
         <h3>Inspect mô hình, chạy ablation</h3>
         <p>Layout Research-console với feature importance global, confusion matrix, ablation toggles (ApEn off, MFDFA off…). Export CSV inference, replay session.</p>
         <ul>
-          <li>SHAP global + per-window local</li>
+          <li>Đánh giá đổi nguồn (leave-source-out) + đối chứng tuổi, trạng thái mắt</li>
           <li>Metrics đọc từ kết quả ablation/research local</li>
           <li>Ablation panel: bật/tắt nhóm features</li>
         </ul>
@@ -514,9 +514,8 @@ footer{padding:60px 36px 36px;background:#04060a;border-top:1px solid var(--line
   }
 
   let t0=performance.now();
-  // Class state — cycles through HS / IS / NS for cinematic effect
+  // Class state - binary NS/IS scope for the public demo
   const classes=[
-    {key:"HS",label:"HEMORRHAGIC",color:"oklch(0.65 0.22 25)",col2:"oklch(0.45 0.18 25 / 0.5)",p:0.78,sub:"ALERT · HEMORRHAGIC"},
     {key:"IS",label:"ISCHEMIC",color:"oklch(0.78 0.15 75)",col2:"oklch(0.55 0.16 75 / 0.5)",p:0.71,sub:"ALERT · ISCHEMIC"},
     {key:"NS",label:"NO STROKE",color:"oklch(0.72 0.16 152)",col2:"oklch(0.55 0.16 152 / 0.5)",p:0.83,sub:"MONITOR · STABLE"},
   ];

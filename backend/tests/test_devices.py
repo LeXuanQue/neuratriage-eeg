@@ -23,7 +23,7 @@ def test_probe_with_alias_channels_canonicalises_them() -> None:
             "/api/devices/probe",
             headers={"Authorization": f"Bearer {token}"},
             json={
-                "channels": ["AF3", "AF4", "T7", "T8"],
+                "channels": ["AF3", "AF4"],
                 "fs": 256,
                 "device_id": "BLE-AA:BB:CC:DD:EE:FF",
                 "device_name": "Brain-Life Focus+ (mock)",
@@ -33,15 +33,14 @@ def test_probe_with_alias_channels_canonicalises_them() -> None:
         assert r.status_code == 200
         data = r.json()["data"]
 
-    assert data["device_channels"] == ["AF3", "AF4", "T7", "T8"]
-    matched_canon = {m["canonical"] for m in data["matched"]}
-    assert "T3" in matched_canon
-    assert "T4" in matched_canon
-    aliased = [m for m in data["matched"] if m["aliased"]]
-    assert {m["device_label"] for m in aliased} == {"T7", "T8"}
+    # The device streams AF3/AF4 (recovered from the vendor app). They are not
+    # in DEFAULT_CHANNELS and must not be aliased onto FP1/FP2, so the probe
+    # reports zero coverage instead of pretending the 18-ch model applies.
+    assert data["device_channels"] == ["AF3", "AF4"]
+    assert data["matched"] == []
     assert set(data["unrecognised"]) == {"AF3", "AF4"}
-    assert data["coverage_ratio"] == pytest.approx(2 / 18)
-    assert data["preset_hint"]["channels"] == ["AF3", "AF4", "T7", "T8"]
+    assert data["coverage_ratio"] == pytest.approx(0.0)
+    assert data["preset_hint"]["channels"] == ["AF3", "AF4"]
 
 
 def test_probe_full_18ch_has_full_coverage() -> None:
@@ -86,4 +85,4 @@ def test_presets_endpoint_returns_known_templates() -> None:
 
     assert "brain_life_focus_plus" in data
     assert "full_18ch" in data
-    assert data["brain_life_focus_plus"]["channels"] == ["AF3", "AF4", "T7", "T8"]
+    assert data["brain_life_focus_plus"]["channels"] == ["AF3", "AF4"]

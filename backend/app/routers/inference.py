@@ -6,7 +6,7 @@ record through run_offline_inference().
 """
 from __future__ import annotations
 
-from collections import Counter
+import math
 from pathlib import Path
 from typing import List, Optional
 
@@ -23,6 +23,20 @@ from ..services.rate_limit import infer_limiter
 
 
 router = APIRouter(prefix="/api", tags=["inference"])
+
+
+def _num(value: object, default: Optional[float] = None) -> Optional[float]:
+    """Coerce to a finite float; return ``default`` for None/NaN/inf/non-numeric.
+
+    Window probabilities and SQI are NaN for SQI-gated windows. A frame that is
+    entirely gated would otherwise produce NaN aggregates, which serialise as the
+    invalid JSON token ``NaN`` and break the client.
+    """
+    try:
+        out = float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return default
+    return out if math.isfinite(out) else default
 
 
 class InferRequest(BaseModel):
@@ -83,7 +97,6 @@ def _resolve_infer_path(body: InferRequest) -> Path:
             (REPO_ROOT / "dataset_real").resolve(),
             (REPO_ROOT / "dataset_ischemic").resolve(),
             (REPO_ROOT / "dataset_healthy").resolve(),
-            (REPO_ROOT / "dataset_hemorrhagic").resolve(),
             (REPO_ROOT / "dataset_npz").resolve(),
         ]
         if path.is_file() and any(path.is_relative_to(root) for root in allowed_roots):
@@ -166,19 +179,22 @@ def infer(
     for i, (_idx, row) in enumerate(frame.iterrows()):
         timeline.append(
             {
-                "t": float(row.get("t_end_sec", i)),
-                "NS": float(row.get("p_nonstroke_smooth", 0) or 0),
-                "IS": float(row.get("p_ischemic_smooth", 0) or 0),
-                "HS": float(row.get("p_hemorrhagic_smooth", 0) or 0),
-                "sqi": float(row.get("sqi_total", 0) or 0),
+                "t": _num(row.get("t_end_sec"), float(i)),
+                "NS": _num(row.get("p_nonstroke_smooth"), 0.0),
+                "IS": _num(row.get("p_ischemic_smooth"), 0.0),
+                "sqi": _num(row.get("sqi_total"), 0.0),
                 "cls": str(row.get("pred_class", "")),
             }
         )
 
-    votes = Counter(w["cls"] for w in timeline if w["cls"])
-    overall_class: Optional[str] = (
-        votes.most_common(1)[0][0] if votes else str(last.get("pred_class", ""))
-    )
+    # "no-decision" windows (SQI-gated) are not a class prediction — exclude
+    # them from the majority vote so a noisy recording can't mask a real class.
+    mean_ns = _num(frame["p_nonstroke_smooth"].mean(), 0.0) or 0.0
+    mean_is = _num(frame["p_ischemic_smooth"].mean(), 0.0) or 0.0
+    overall_class: Optional[str] = "ischemic" if mean_is >= mean_ns else "non-stroke"
+    latest_ns = _num(last.get("p_nonstroke_smooth"), 0.0) or 0.0
+    latest_is = _num(last.get("p_ischemic_smooth"), 0.0) or 0.0
+    latest_class = "ischemic" if latest_is >= latest_ns else "non-stroke"
 
     return ok(
         {
@@ -199,18 +215,16 @@ def infer(
             },
             "overall": {
                 "pred_class": overall_class,
-                "p_nonstroke": float(frame["p_nonstroke_smooth"].mean()),
-                "p_ischemic": float(frame["p_ischemic_smooth"].mean()),
-                "p_hemorrhagic": float(frame["p_hemorrhagic_smooth"].mean()),
-                "sqi": float(frame["sqi_total"].mean()),
+                "p_nonstroke": mean_ns,
+                "p_ischemic": mean_is,
+                "sqi": _num(frame["sqi_total"].mean()),
             },
             "latest": {
-                "t_end_sec": float(last.get("t_end_sec", 0) or 0),
-                "pred_class": str(last.get("pred_class", "")),
-                "sqi": float(last.get("sqi_total", 0) or 0),
-                "p_nonstroke": float(last.get("p_nonstroke_smooth", 0) or 0),
-                "p_ischemic": float(last.get("p_ischemic_smooth", 0) or 0),
-                "p_hemorrhagic": float(last.get("p_hemorrhagic_smooth", 0) or 0),
+                "t_end_sec": _num(last.get("t_end_sec"), 0.0),
+                "pred_class": latest_class,
+                "sqi": _num(last.get("sqi_total")),
+                "p_nonstroke": latest_ns,
+                "p_ischemic": latest_is,
             },
             "timeline": timeline,
         }

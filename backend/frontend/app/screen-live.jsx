@@ -1,7 +1,67 @@
 // Live Monitor — flagship screen
 const { useMemo: useM_lm, useState: useS_lm, useEffect: useE_lm, useRef: useR_lm } = React;
 
-window.LiveMonitor = function LiveMonitor({frame, t, lang, channels, animated, accent}) {
+// Active real-time model + its honest held-out numbers (GET /api/model/info).
+// Cached for the page: the active model only changes when the server restarts.
+let _ntModelInfoCache = null;
+window.useModelInfo = function useModelInfo() {
+  const [info, setInfo] = useS_lm(_ntModelInfoCache);
+  const [error, setError] = useS_lm(null);
+  useE_lm(() => {
+    if (_ntModelInfoCache || !window.NTApi) return undefined;
+    let alive = true;
+    window.NTApi.get("/api/model/info")
+      .then(d => { _ntModelInfoCache = d; if (alive) setInfo(d); })
+      .catch(e => { if (alive) setError(e); });
+    return () => { alive = false; };
+  }, []);
+  return {info, error};
+};
+
+// "Which model is scoring, and what do we honestly know about it."
+window.ModelInfoCard = function ModelInfoCard({t, info, error, compact}) {
+  const m = t.modelInfo;
+  if (error) return <div style={{fontSize:10.5, color:"var(--hs)"}}>{m.unavailable}</div>;
+  if (!info) return <div style={{fontSize:10.5, color:"var(--ink-4)"}}>{m.loading}</div>;
+  const kind = info.realtime_model === "riemann" ? "riemann" : "features";
+  const r = info.riemann || {};
+  const aucs = (r.eye_matched_patient_auc || []).map(v => Number(v).toFixed(2));
+  const sources = Object.entries(r.train_sources || {});
+  return (
+    <div style={{display:"grid", gap:6, fontSize:11}}>
+      <div style={{display:"flex", justifyContent:"space-between", gap:10, alignItems:"baseline"}}>
+        <span style={{color:"var(--ink-3)"}}>{m.label}</span>
+        <span className="mono" style={{color:"var(--ink)", textAlign:"right"}}>{m[kind]}</span>
+      </div>
+      {kind === "riemann" && !r.available && (
+        <div style={{color:"var(--hs)"}}>{m.riemannMissing}</div>
+      )}
+      {kind === "riemann" && r.available && aucs.length > 0 && (
+        <div style={{display:"flex", justifyContent:"space-between", gap:10}}>
+          <span style={{color:"var(--ink-3)"}}>{m.heldout}</span>
+          <span className="mono" style={{color:"var(--ink)"}}>{aucs.join(" / ")}</span>
+        </div>
+      )}
+      {kind === "features" && <div style={{color:"var(--ink-3)", lineHeight:1.45}}>{m.featuresNote}</div>}
+      {!compact && kind === "riemann" && sources.length > 0 && (
+        <div style={{color:"var(--ink-3)", lineHeight:1.45}}>
+          {m.trainedOn}: {sources.map(([k, v]) => `${k} (${v.patients} ${m.patients})`).join(", ")}
+        </div>
+      )}
+      {!compact && kind === "riemann" && (r.known_limits || []).length > 0 && (
+        <div>
+          <div style={{color:"var(--ink-3)", marginBottom:3}}>{m.limitsTitle}</div>
+          <ul style={{margin:0, paddingLeft:16, color:"var(--ink-2)", lineHeight:1.45}}>
+            {r.known_limits.map(x => <li key={x}>{x}</li>)}
+          </ul>
+        </div>
+      )}
+      <div style={{color:"var(--ink-4)", lineHeight:1.45}}>{m.notDiagnostic}</div>
+    </div>
+  );
+};
+
+window.LiveMonitor = function LiveMonitor({frame, t, lang, channels, animated, accent, demo}) {
   // A2: use device channels + raw WS buffer when stream is connected
   const hasRawData = !!(frame.rawBuffer && frame.rawBuffer.length > 0);
   const hasModelEvent = hasRawData && frame.hasModelEvent === true;
@@ -15,9 +75,20 @@ window.LiveMonitor = function LiveMonitor({frame, t, lang, channels, animated, a
   const mode = frame.mode;
   const dom = frame.dominant;
   const signalSqi = hasModelEvent && typeof frame.sqi === "number" ? frame.sqi : null;
-  const lowSqi = !hasModelEvent || Number(signalSqi || 0) < 0.70;
-  const decisionLabel = lowSqi ? (lang === "en" ? "No decision" : "Chưa đủ tín hiệu") : t.severityShort[dom];
-  const accentColor = lowSqi ? "var(--ink-3)" : dom === "NS" ? "var(--ns)" : dom === "IS" ? "var(--is)" : "var(--hs)";
+  // Trust the detector's own gate instead of re-deriving one. The backend gates
+  // at sqi_threshold=0.55 and reports `no-decision` when it refuses; the UI used
+  // to re-test at 0.70, so for SQI in [0.55, 0.70) it hid a decision the model
+  // had actually made — and flickered whenever SQI wobbled across that line.
+  const lowSqi = !hasModelEvent || frame.status === "no-decision";
+  const displayMode = dom === "NS" ? "NS" : "IS";
+  const decisionLabel = lowSqi ? (lang === "en" ? "No decision" : "Chưa đủ tín hiệu") : t.severityShort[displayMode];
+  const accentColor = lowSqi ? "var(--ink-3)" : displayMode === "NS" ? "var(--ns)" : "var(--is)";
+  // An abstention must never borrow the green "NS" styling (Jabbour et al. 2025:
+  // clinicians under-diagnose when the AI abstains), nor the panel's colour while
+  // nothing has been measured yet.
+  const recommendationClass = !hasModelEvent ? "panel"
+    : lowSqi ? "panel sev-bg-nd" : `panel sev-bg-${displayMode.toLowerCase()}`;
+  const modelInfo = window.useModelInfo();
 
   // Alert action state
   const [currentAlertId, setCurrentAlertId] = useS_lm(null);
@@ -89,19 +160,17 @@ window.LiveMonitor = function LiveMonitor({frame, t, lang, channels, animated, a
         : {title:"Đang chờ event model", body:"Đã có EEG raw/replay, nhưng detector chưa trả event model. Xác suất và cảnh báo sẽ ẩn cho đến khi có dữ liệu từ backend.", action:null};
     }
     if (lowSqi) {
-      return lang === "en"
-        ? {title:"Signal not usable yet", body:"SQI is below the detector gate. This usually means too few clean windows, flat/low-variance data, motion/noise, missing channels, or replay data that has not reached the model window length yet.", action:null}
-        : {title:"Tín hiệu chưa đủ dùng", body:"SQI thấp hơn ngưỡng của detector. Thường do chưa đủ cửa sổ sạch, dữ liệu phẳng/biên độ thấp, nhiễu chuyển động, thiếu kênh, hoặc replay chưa đủ dài để tạo cửa sổ model.", action:null};
+      return {title: t.nd.title, body: t.nd.body, action: null, nd: true};
     }
     if (lang === "en") {
       if (dom === "NS") return {title:"No elevated model signal", body:"The current EEG window does not cross the model alert threshold. Continue monitoring; this is not a clinical exclusion.", action:null};
-      if (dom === "IS") return {title:"Model output favors IS", body:"The model probability crossed the IS alert threshold on usable EEG windows. Treat this as triage support only and confirm through the standard stroke workflow.", action:"Page MD"};
-      return {title:"Model output favors HS", body:"The HS output is exploratory in this prototype. It can be shown for testing, but it is not a validated diagnosis and must be confirmed by standard imaging/workflow.", action:"Page MD"};
+      if (dom === "IS") return {title:"Model output favors IS", body:"The model probability crossed the IS alert threshold on usable EEG windows. Treat this as binary triage support only and confirm through the standard stroke workflow.", action:"Page MD"};
+      return {title:"Outside binary scope", body:"The app is configured for NS-vs-IS triage. Other model outputs are not presented as validated clinical classes.", action:null};
     }
     if (dom === "NS") return {title:"Model chưa thấy tín hiệu tăng", body:"Cửa sổ EEG hiện tại chưa vượt ngưỡng cảnh báo của model. Tiếp tục theo dõi; đây không phải kết luận loại trừ lâm sàng.", action:null};
     if (dom === "IS") return {title:"Model nghiêng về IS", body:"Xác suất model vượt ngưỡng IS trên các cửa sổ EEG đủ chất lượng. Chỉ dùng để hỗ trợ triage và phải xác nhận bằng quy trình đột quỵ tiêu chuẩn.", action:"Báo MD"};
-    return {title:"Model nghiêng về HS", body:"Đầu ra HS trong prototype này còn exploratory. Có thể dùng để test giao diện, nhưng chưa phải chẩn đoán đã được validation và phải xác nhận bằng hình ảnh/quy trình chuẩn.", action:"Báo MD"};
-  }, [dom, lang, lowSqi, hasRawData, hasModelEvent]);
+    return {title:"Ngoài phạm vi binary", body:"App đang cấu hình cho triage NS-vs-IS. Các đầu ra khác không được trình bày như class lâm sàng đã validation.", action:null};
+  }, [dom, lang, lowSqi, hasRawData, hasModelEvent, t]);
   const whyTitle = lang === "en" ? "Why is this shown?" : "Vì sao hệ thống hiển thị?";
   const whyRows = [
     [lang === "en" ? "Signal state" : "Trạng thái tín hiệu", !hasRawData ? "Waiting for raw EEG" : !hasModelEvent ? "Raw EEG only - waiting for detector" : lowSqi ? "SQI gate blocks model decision" : "Usable EEG window"],
@@ -137,8 +206,135 @@ window.LiveMonitor = function LiveMonitor({frame, t, lang, channels, animated, a
     return Object.fromEntries(raw.map(([ch, v]) => [ch, Math.max(0.05, Math.min(1, v / max))]));
   }, [hasRawData, frame.rawBuffer, frame.device?.sample_rate, displayChannels.join(",")]);
 
+  const streamError = frame.streamError || null;
+
+  // Demo mode context — which stored recording is running and what to watch for.
+  const demoScenario = (demo && demo.scenario) || null;
+  const demoTitle = demoScenario ? (demoScenario.title[lang] || demoScenario.title.en) : "";
+  const demoExpect = demoScenario ? (demoScenario.expect[lang] || demoScenario.expect.en) : "";
+  const demoActive = !!(demo && demo.activeId);
+
+  // Live-device link state (BLE). Only meaningful before real samples arrive.
+  const deviceStatus = frame.deviceStatus || null;
+  const showDeviceStatus = !!deviceStatus && !hasRawData
+    && deviceStatus.state !== "connected" && deviceStatus.state !== "stopped";
+  const deviceSearching = deviceStatus && deviceStatus.state === "searching";
+  const deviceStatusColor = deviceSearching ? "var(--brand-2)" : "var(--is)";
+
   return (
     <div className="nt-live-layout" style={{padding:14, height:"calc(100vh - 54px)"}}>
+      {demoActive && (
+        <div style={{
+          gridColumn:"1 / -1", marginBottom:10, padding:"11px 14px",
+          border:"1px solid " + (frame.replayDone ? "var(--line-2)" : "var(--brand-2)"),
+          borderRadius:9,
+          background:"color-mix(in oklab, var(--brand-2) 7%, transparent)",
+        }}>
+          <div style={{display:"flex", alignItems:"center", gap:10, flexWrap:"wrap", marginBottom:9}}>
+            <span className="tag mono" style={{fontSize:9.5, color:"var(--brand-2)", borderColor:"var(--brand-2)"}}>
+              {!frame.replayDone && <span className="dot live"/>}
+              {frame.replayDone ? t.demo.replayDone : t.demo.banner}
+            </span>
+            <span style={{fontSize:13, fontWeight:600}}>{demoTitle}</span>
+            {frame.replayLap > 0 && (
+              <span className="tag mono" style={{fontSize:9.5, color:"var(--ink-3)"}}>
+                {t.demo.lap} {frame.replayLap}
+              </span>
+            )}
+            <span style={{fontSize:11.5, color:"var(--ink-3)", flex:"1 1 200px", minWidth:0}}>{t.demo.bannerHint}</span>
+            <div style={{display:"flex", gap:7, flexWrap:"wrap"}}>
+              <button className="btn btn-sm" onClick={() => demo.rerun()}>
+                <window.NTIcon name="play" size={11}/>{t.demo.rerun}
+              </button>
+              <button className="btn btn-sm" onClick={() => demo.toggleLoop && demo.toggleLoop()}
+                      title={t.demo.loopHint}
+                      style={{borderColor: demo.loop ? "var(--brand-2)" : "var(--line-2)",
+                              color: demo.loop ? "var(--brand-2)" : "var(--ink-2)"}}>
+                {t.demo.loop}: {demo.loop ? t.demo.on : t.demo.off}
+              </button>
+              <button className="btn btn-sm" onClick={() => window.dispatchEvent(new CustomEvent("nt:nav", {detail:{tab:"demo"}}))}>
+                {t.demo.change}
+              </button>
+              <button className="btn-ghost btn btn-sm" onClick={() => demo.stop()}>{t.demo.stop}</button>
+            </div>
+          </div>
+          {window.DemoPipelineStrip && <window.DemoPipelineStrip t={t} frame={frame}/>}
+          {demoExpect && (
+            <div style={{marginTop:9, fontSize:11.5, color:"var(--ink-2)", lineHeight:1.5}}>
+              <span style={{color:"var(--ink-3)"}}>{t.demo.expectLabel}: </span>{demoExpect}
+            </div>
+          )}
+        </div>
+      )}
+      {showDeviceStatus && (
+        <div role="status" style={{
+          gridColumn:"1 / -1", marginBottom:10, padding:"12px 15px",
+          border:"1px solid " + deviceStatusColor, borderRadius:9,
+          background:"color-mix(in oklab, " + deviceStatusColor + " 8%, transparent)",
+          display:"flex", alignItems:"center", gap:13, flexWrap:"wrap",
+        }}>
+          <window.NTIcon name="bt" size={16} color={deviceStatusColor}/>
+          <div style={{flex:"1 1 300px", minWidth:0}}>
+            <div style={{fontSize:13.5, fontWeight:600, color:deviceStatusColor, marginBottom:3}}>
+              {deviceSearching ? t.deviceLink.searching
+                : deviceStatus.state === "blocked" ? t.deviceLink.blocked
+                : t.deviceLink.error}
+              {deviceStatus.retryInSec != null && (
+                <span className="mono" style={{fontWeight:400, fontSize:11, color:"var(--ink-3)", marginLeft:8}}>
+                  {t.deviceLink.retryIn} {deviceStatus.retryInSec}{lang === "vi" ? " " : ""}{t.deviceLink.seconds}
+                </span>
+              )}
+            </div>
+            <div style={{fontSize:12, color:"var(--ink-3)", lineHeight:1.5}}>
+              {deviceSearching ? t.deviceLink.searchingHint : t.deviceLink.errorHint}
+            </div>
+            {deviceStatus.message && (
+              <div className="mono" style={{fontSize:10.5, color:"var(--ink-4)", marginTop:4}}>
+                {deviceStatus.message}
+              </div>
+            )}
+          </div>
+          <button className="btn btn-sm"
+                  onClick={() => window.dispatchEvent(new CustomEvent("nt:nav", {detail:{tab:"demo"}}))}>
+            <window.NTIcon name="play" size={11}/>{t.deviceLink.openDemo}
+          </button>
+        </div>
+      )}
+      {demo && !demoActive && !hasRawData && !showDeviceStatus && (
+        <div style={{
+          gridColumn:"1 / -1", marginBottom:10, padding:"14px 16px",
+          border:"1px dashed var(--line-2)", borderRadius:9, background:"var(--bg-2)",
+          display:"flex", alignItems:"center", gap:14, flexWrap:"wrap",
+        }}>
+          <div style={{flex:"1 1 320px", minWidth:0}}>
+            <div style={{fontSize:14, fontWeight:600, marginBottom:4}}>{t.demo.ctaTitle}</div>
+            <div style={{fontSize:12, color:"var(--ink-3)", lineHeight:1.55}}>{t.demo.ctaBody}</div>
+          </div>
+          <button className="btn btn-primary btn-sm"
+                  onClick={() => window.dispatchEvent(new CustomEvent("nt:nav", {detail:{tab:"demo"}}))}>
+            <window.NTIcon name="play" size={11}/>{t.demo.cta}
+          </button>
+        </div>
+      )}
+      {streamError && (
+        <div
+          role="alert"
+          style={{
+            gridColumn:"1 / -1",
+            display:"flex", alignItems:"center", gap:10,
+            padding:"10px 14px", marginBottom:10,
+            border:"1px solid var(--hs)",
+            background:"rgba(220,70,70,0.12)",
+            borderRadius:8, color:"var(--hs)",
+            fontFamily:"var(--font-mono)", fontSize:13,
+          }}>
+          <window.NTIcon name="alerts" size={15} color="var(--hs)"/>
+          <span>
+            <b>{lang==="en" ? "Cannot start stream" : "Không thể bắt đầu luồng"}:</b>{" "}
+            {streamError}
+          </span>
+        </div>
+      )}
       {/* LEFT — EEG + topomap + features */}
       <div className="nt-live-main">
         {/* EEG strip */}
@@ -149,6 +345,26 @@ window.LiveMonitor = function LiveMonitor({frame, t, lang, channels, animated, a
               <span>EEG · {hasRawData ? displayChannels.length : 0} {t.live.channels} · {frame.device?.sample_rate || 256} {t.live.hz}</span>
             </div>
             <div style={{display:"flex", gap:8, alignItems:"center"}}>
+              <button
+                type="button"
+                onClick={() => { if (window.WSStream && window.WSStream.setArtifact) window.WSStream.setArtifact(!frame.artifactOn); }}
+                disabled={!hasRawData}
+                title={lang==="en"
+                  ? "Demo: inject a signal artifact so SQI drops and the interface enters No-Decision"
+                  : "Demo: chèn nhiễu để SQI tụt và giao diện vào trạng thái No-Decision"}
+                className="tag"
+                style={{
+                  cursor: hasRawData ? "pointer" : "not-allowed",
+                  fontFamily:"var(--font-mono)",
+                  opacity: hasRawData ? 1 : 0.5,
+                  border:"1px solid " + (frame.artifactOn ? "var(--hs)" : "var(--ink-4)"),
+                  background: frame.artifactOn ? "rgba(220,70,70,0.14)" : "transparent",
+                  color: frame.artifactOn ? "var(--hs)" : "var(--ink-3)",
+                }}>
+                {frame.artifactOn
+                  ? (lang==="en" ? "⚠ Artifact ON" : "⚠ Nhiễu BẬT")
+                  : (lang==="en" ? "Inject artifact" : "Chèn nhiễu")}
+              </button>
               {hasRawData
                 ? <span className="tag" style={{fontFamily:"var(--font-mono)", color:"var(--brand-2)"}}>{sourceLabel} · {displayChannels.length}ch</span>
                 : <span className="tag" style={{fontFamily:"var(--font-mono)"}}>no raw stream</span>
@@ -191,9 +407,10 @@ window.LiveMonitor = function LiveMonitor({frame, t, lang, channels, animated, a
 
           <div className="panel" style={{padding:12, overflow:"hidden", minWidth:0}}>
             <div style={{fontSize:10, textTransform:"uppercase", letterSpacing:"0.10em", color:"var(--ink-3)", fontWeight:500, marginBottom:12}}>{t.live.explainShort}</div>
+            {/* Nothing in the backend computes attributions yet, so never draw bars. */}
             {hasModelEvent && topSignals.length > 0
               ? <window.FeatureAttribution features={frame.features.slice(0, 5)} color={accentColor}/>
-              : <div style={{height:130, display:"grid", placeItems:"center", textAlign:"center", color:"var(--ink-3)", fontSize:11, lineHeight:1.45}}>{lang==="en"?"Feature attribution waits for model events.":"Đóng góp đặc trưng chờ event model."}</div>}
+              : <div style={{height:130, display:"grid", placeItems:"center", textAlign:"center", color:"var(--ink-3)", fontSize:11, lineHeight:1.45, padding:"0 6px"}}>{t.modelInfo.explainUnavailable}</div>}
           </div>
 
           <div className="panel" style={{padding:"12px 12px 4px", minWidth:0}}>
@@ -211,28 +428,43 @@ window.LiveMonitor = function LiveMonitor({frame, t, lang, channels, animated, a
         <div className="panel" style={{padding:18}}>
           <div style={{display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:14}}>
             <div style={{fontSize:10.5, textTransform:"uppercase", letterSpacing:"0.10em", color:"var(--ink-3)", fontWeight:500}}>{t.live.riskScore}</div>
-            <span className={`tag ${lowSqi ? "" : dom.toLowerCase()}`}><span className={`dot live ${lowSqi ? "" : dom.toLowerCase()}`}/>{decisionLabel}</span>
+            <span className={`tag ${lowSqi ? "" : displayMode.toLowerCase()}`}><span className={`dot live ${lowSqi ? "" : displayMode.toLowerCase()}`}/>{decisionLabel}</span>
           </div>
           {hasModelEvent ? (
             <>
               <div style={{display:"flex", justifyContent:"center", marginBottom:16}}>
-                <window.RiskGauge size={150} value={lowSqi ? (signalSqi || 0) : frame.probs[dom]} color={accentColor}
-                                  label={decisionLabel} sublabel={lowSqi ? "SQI gate" : t.live.currentClass}/>
+                <window.RiskGauge size={150} value={lowSqi ? (signalSqi || 0) : frame.probs[displayMode]} color={accentColor}
+                                  label={decisionLabel} sublabel={lowSqi ? t.nd.gaugeSub : t.live.currentClass}/>
               </div>
-              <window.RiskBars probs={frame.probs} labels={t.severity}/>
+              {/* Under No-Decision the bars are not a result: grey them out so a
+                  50/50 or green NS bar is not read as "normal". */}
+              <div style={lowSqi ? {opacity:0.3, filter:"grayscale(1)"} : undefined} aria-hidden={lowSqi || undefined}>
+                <window.RiskBars probs={frame.probs} labels={t.severity}/>
+              </div>
             </>
           ) : (
             <div style={{height:190, display:"grid", placeItems:"center", color:"var(--ink-3)", fontSize:12, textAlign:"center", lineHeight:1.5}}>
               {lang==="en"?"No realtime EEG probabilities yet.":"Chưa có xác suất realtime từ raw EEG."}
             </div>
           )}
+          <div style={{marginTop:12, paddingTop:10, borderTop:"1px solid var(--line)"}}>
+            <window.ModelInfoCard t={t} info={modelInfo.info} error={modelInfo.error} compact={true}/>
+          </div>
         </div>
 
         {/* Recommendation */}
-        <div className={`panel sev-bg-${dom.toLowerCase()}`} style={{padding:"16px 18px"}}>
+        <div className={recommendationClass} style={{padding:"16px 18px"}} role={recommendation.nd ? "alert" : undefined}>
           <div style={{fontSize:10.5, textTransform:"uppercase", letterSpacing:"0.10em", color:"var(--ink-3)", fontWeight:500, marginBottom:10}}>{t.live.recommendation}</div>
-          <h3 style={{fontSize:15, fontWeight:600, margin:"0 0 8px", color:accentColor, letterSpacing:"-0.005em"}}>{recommendation.title}</h3>
+          <h3 style={{fontSize:15, fontWeight:600, margin:"0 0 8px", color: recommendation.nd ? "var(--ink)" : accentColor, letterSpacing:"-0.005em"}}>{recommendation.title}</h3>
           <p style={{fontSize:12.5, color:"var(--ink-2)", margin:"0 0 14px", lineHeight:1.55, fontWeight:300}}>{recommendation.body}</p>
+          {recommendation.nd && (
+            <div style={{margin:"0 0 14px"}}>
+              <div style={{fontSize:10.5, textTransform:"uppercase", letterSpacing:"0.10em", color:"var(--ink-2)", fontWeight:600, marginBottom:6}}>{t.nd.actionsTitle}</div>
+              <ol style={{margin:0, paddingLeft:18, fontSize:12.5, color:"var(--ink)", lineHeight:1.55}}>
+                {t.nd.actions.map(a => <li key={a}>{a}</li>)}
+              </ol>
+            </div>
+          )}
           <div style={{display:"flex", gap:8, flexWrap:"wrap"}}>
             {recommendation.action && (
               <button
@@ -282,21 +514,13 @@ window.LiveMonitor = function LiveMonitor({frame, t, lang, channels, animated, a
               </div>
             ))}
           </div>
-          <div style={{fontSize:11, color:"var(--ink-3)", marginBottom:7}}>{lang === "en" ? "Top contributing signals" : "Tín hiệu đóng góp chính"}</div>
-          {hasModelEvent && topSignals.length > 0 ? topSignals.map((f) => (
-            <div key={f.name} style={{display:"grid", gridTemplateColumns:"1fr 46px", gap:8, alignItems:"center", marginBottom:6}}>
-              <div className="mono" style={{fontSize:10.5, color:"var(--ink-2)", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap"}}>{f.name}</div>
-              <div className="mono" style={{fontSize:10.5, color:accentColor, textAlign:"right"}}>{Number(f.value || 0).toFixed(3)}</div>
-            </div>
-          )) : (
-            <div style={{fontSize:10.5, color:"var(--ink-4)", lineHeight:1.45}}>
-              {lang==="en"?"Waiting for model events from raw EEG.":"Đang chờ event model từ raw EEG."}
-            </div>
-          )}
+          {/* Was "Top contributing signals": the backend never sends attributions, so
+              this slot now states which model is scoring and its known limits. */}
+          <window.ModelInfoCard t={t} info={modelInfo.info} error={modelInfo.error} compact={false}/>
           <div style={{fontSize:10.5, color:"var(--ink-4)", lineHeight:1.45, marginTop:8}}>
             {lang === "en"
-              ? "Research prototype. Not a diagnosis or replacement for CT/MRI."
-              : "Prototype nghiên cứu. Không thay thế chẩn đoán hoặc CT/MRI."}
+              ? "Not a replacement for CT/MRI."
+              : "Không thay thế CT/MRI."}
           </div>
           {(lowSqi || !currentAlertId) && (
             <div style={{fontSize:10.5, color:lowSqi ? "var(--is)" : "var(--ink-4)", lineHeight:1.45, marginTop:8}}>
@@ -326,7 +550,7 @@ window.LiveMonitor = function LiveMonitor({frame, t, lang, channels, animated, a
               {!hasModelEvent || frame.timeToAlertSec === null ? "—" : frame.timeToAlertSec.toFixed(1)}
               <span className="unit">{t.live.seconds}</span>
             </div>
-            <div className="stat-sub">{hasModelEvent ? "EMA beta=0.3 · hys 0.65/0.55" : (lang==="en"?"No realtime event yet":"Chưa có event realtime")}</div>
+            <div className="stat-sub">{hasModelEvent ? "EMA beta=0.35 · hys 0.80/0.60" : (lang==="en"?"No realtime event yet":"Chưa có event realtime")}</div>
           </div>
         </div>
 
@@ -342,7 +566,6 @@ window.LiveMonitor = function LiveMonitor({frame, t, lang, channels, animated, a
           <div style={{display:"flex", justifyContent:"space-between", marginTop:8, fontSize:10.5, fontFamily:"var(--font-mono)"}}>
             <span style={{color:"var(--ns)"}}>● NS</span>
             <span style={{color:"var(--is)"}}>● IS</span>
-            <span style={{color:"var(--hs)"}}>● HS</span>
           </div>
         </div>
       </div>

@@ -10,9 +10,12 @@ Protocol (Master Prompt §4):
   Server → Client:
     {"type": "ready", "session_id": "...", "mapped_channels": [...]}
     {"type": "event", "timestamp_sec": 1.5, "status": "monitor"|"alert-enter"|...,
-     "predicted_class": "non-stroke"|"ischemic"|"hemorrhagic"|null,
+     "predicted_class": "non-stroke"|"ischemic"|null,
      "probabilities_smooth": [p_ns, p_is, p_hs],
      "sqi_total": 0.82, "alert_class": "ischemic"|null}
+    {"type": "replay_loop", "lap": 2}   # only when init asked for loop=true
+    {"type": "device_status", "state": "searching"|"connected"|"error"|
+     "blocked"|"stopped", "message": "...", "retry_in_sec": 2.0}
     {"type": "error", "message": "..."}
 """
 from __future__ import annotations
@@ -31,9 +34,10 @@ from sqlalchemy import select
 from ..database import SessionLocal
 from ..models import Alert, EEGSession
 from ..auth import decode_token, find_user_by_id
+from ..services.artifact_inject import apply_synthetic_artifact
 from ..services.channel_mapper import DEVICE_PRESETS, map_to_pipeline
 from ..services.model_manager import get_manager
-from ..services.replay_cases import resolve_replay_case
+from ..services.replay_cases import resolve_stream_file
 from ..services.session_manager import get_session_manager
 
 
@@ -163,17 +167,47 @@ def _load_replay_data(path: Path) -> tuple[np.ndarray, List[str], float]:
     Mapping/imputation to the pipeline's standard layout happens later and is
     used only for detector input.
     """
-    with np.load(str(path), allow_pickle=True) as npz:
-        if "data" in npz.files:
-            data = np.asarray(npz["data"], dtype=float)
-        elif "eeg" in npz.files:
-            data = np.asarray(npz["eeg"], dtype=float)
-        else:
-            data = np.asarray(npz[npz.files[0]], dtype=float)
-        channels = (
-            [str(c) for c in npz["channels"]] if "channels" in npz.files else list(DEFAULT_CHANNELS)
+    loaded = np.load(str(path), allow_pickle=True)
+    channels: Optional[List[str]] = None
+    fs = 256.0
+    try:
+        if hasattr(loaded, "files"):  # .npz bundle
+            if "data" in loaded.files:
+                data = np.asarray(loaded["data"], dtype=float)
+            elif "eeg" in loaded.files:
+                data = np.asarray(loaded["eeg"], dtype=float)
+            else:
+                data = np.asarray(loaded[loaded.files[0]], dtype=float)
+            if "channels" in loaded.files:
+                channels = [str(c) for c in loaded["channels"]]
+            if "fs" in loaded.files:
+                fs = float(loaded["fs"])
+        else:  # bare .npy array — no metadata to go with it
+            data = np.asarray(loaded, dtype=float)
+    finally:
+        if hasattr(loaded, "close"):
+            loaded.close()
+
+    # An uploaded file is whatever the operator had lying around, so normalise
+    # here rather than letting a bad shape reach the detector.
+    if data.ndim == 1:
+        data = data[np.newaxis, :]
+    if data.ndim != 2:
+        raise ValueError(
+            f"Expected a (channels, samples) matrix, got array with shape {data.shape}"
         )
-        fs = float(npz["fs"]) if "fs" in npz.files else 256.0
+    if not data.size:
+        raise ValueError("Recording is empty")
+    if fs <= 0:
+        fs = 256.0
+
+    rows = int(data.shape[0])
+    if channels is None or len(channels) != rows:
+        channels = (
+            list(DEFAULT_CHANNELS[:rows])
+            if rows <= len(DEFAULT_CHANNELS)
+            else [f"CH{i + 1}" for i in range(rows)]
+        )
     return data, channels, fs
 
 
@@ -184,6 +218,8 @@ async def _run_replay(
     counters: Dict[str, float],
     chunk_seconds: float = 0.5,
     realtime: bool = True,
+    artifact_state: Optional[Dict[str, Any]] = None,
+    loop: bool = False,
 ) -> None:
     """Server-driven replay: read a stored .npz and stream chunks through
     the detector at (optionally) real-time pace.
@@ -206,9 +242,21 @@ async def _run_replay(
     chunk_samples = max(1, int(round(chunk_seconds * fs)))
     n_total = data.shape[1]
     pos = 0
+    lap = 0
+    # Looping keeps a demo screen alive past the end of the recording. The
+    # detector is deliberately NOT reset between laps: its EMA/hysteresis state
+    # carries over, so playback stays continuous instead of restarting cold.
     while pos < n_total:
         chunk = data[:, pos : pos + chunk_samples]
         pos += chunk_samples
+        # Demo control: when artifact injection is toggled on, corrupt the chunk
+        # so SQI drops and the UI enters No-Decision. The corrupted chunk is what
+        # gets both displayed (raw_chunk) and scored, so the waveform and the SQI
+        # response stay consistent.
+        if artifact_state and artifact_state.get("on"):
+            chunk = apply_synthetic_artifact(
+                chunk, fs, float(artifact_state.get("intensity", 1.0))
+            )
         try:
             await ws.send_json(
                 {
@@ -221,9 +269,10 @@ async def _run_replay(
         except Exception:
             return
         try:
-            loop = asyncio.get_event_loop()
+            # NB: not named `loop` — that is this function's boolean parameter.
+            event_loop = asyncio.get_running_loop()
             mapped, _ = map_to_pipeline(chunk, replay_channels, fs=fs)
-            events = await loop.run_in_executor(None, detector.update, mapped)
+            events = await event_loop.run_in_executor(None, detector.update, mapped)
         except Exception as exc:
             logger.exception("Replay detector failed for %s", session_id)
             await ws.send_json({"type": "error", "message": str(exc)})
@@ -243,10 +292,112 @@ async def _run_replay(
         if realtime:
             await asyncio.sleep(chunk_seconds)
 
+        if pos >= n_total and loop:
+            lap += 1
+            pos = 0
+            try:
+                await ws.send_json({"type": "replay_loop", "lap": lap})
+            except Exception:
+                return
+
     try:
         await ws.send_json({"type": "replay_done"})
     except Exception:
         pass
+
+
+async def _run_device(
+    ws: WebSocket,
+    session_id: str,
+    address: str,
+    counters: Dict[str, float],
+) -> None:
+    """Server-driven live device: stream BLE chunks through the detector.
+
+    Mirrors `_run_replay` but the source is a real headset. Refuses to start
+    until the device protocol is confirmed (`configured=True`), so an
+    unconfigured BLE profile never feeds the detector. Exploratory: the Focus+
+    delivers 2 differential channels mapped onto the 18-ch pipeline montage.
+    """
+    from ..services.device_source import BRAIN_LIFE_FOCUS_PLUS, BleDeviceSource
+    from ..services.device_stream import (
+        DeviceSqiMonitor,
+        device_sqi_event,
+        run_device_session,
+    )
+
+    sm = get_session_manager()
+    detector = sm.get_session(session_id)
+    if detector is None:
+        await ws.send_json({"type": "error", "message": "Device: session not initialised"})
+        return
+
+    proto = BRAIN_LIFE_FOCUS_PLUS
+    if not proto.configured:
+        await ws.send_json(
+            {
+                "type": "error",
+                "message": (
+                    "Live device not configured yet — run scripts/ble_probe.py and set "
+                    "configured=True in device_source.py before streaming."
+                ),
+            }
+        )
+        return
+
+    # SQI is scored on the REAL device channels, not the zero-filled 18-ch map
+    # (see DeviceSqiMonitor): the 2 differential channels don't alias onto the
+    # monopolar montage, so scoring the mapped array would pin SQI at ~0 forever.
+    # The live device path is quality-only — it drives SQI / No-Decision but never
+    # a class; classification stays on the validated 18-ch replay path (Hybrid).
+    monitor = DeviceSqiMonitor(len(proto.channel_labels), proto.fs, detector.config)
+    gate = float(detector.config.sqi_threshold)
+    elapsed = {"sec": 0.0}
+
+    async def on_data(chunk: np.ndarray, labels: List[str]) -> None:
+        arr = np.asarray(chunk, dtype=float)
+        try:
+            await ws.send_json(
+                {
+                    "type": "raw_chunk",
+                    "chunk": arr.tolist(),
+                    "device_channels": list(labels),
+                    "fs": proto.fs,
+                }
+            )
+        except Exception:
+            return
+        sqi = monitor.push(arr)
+        if sqi is None:
+            return
+        if arr.ndim == 2 and arr.shape[1]:
+            elapsed["sec"] += float(arr.shape[1]) / float(proto.fs)
+        event = device_sqi_event(sqi, elapsed["sec"], gate)
+        counters["total_windows"] = counters.get("total_windows", 0) + 1
+        if event["status"] != "no-decision":
+            counters["valid_windows"] = counters.get("valid_windows", 0) + 1
+            counters["sqi_sum"] = counters.get("sqi_sum", 0.0) + event["sqi_total"]
+        try:
+            await ws.send_json(_serializable_event(event))
+        except Exception:
+            return
+
+    async def on_status(payload: Dict[str, Any]) -> None:
+        """Forward BLE link state so the client can tell "headset off" from "broken"."""
+        try:
+            await ws.send_json({"type": "device_status", **payload})
+        except Exception:
+            return
+
+    await run_device_session(
+        lambda on_chunk: BleDeviceSource(
+            proto,
+            on_chunk,
+            address or proto.name_hint or proto.name,
+            on_status=on_status,
+        ),
+        on_data,
+    )
 
 
 def _resolve_init_channels(init_msg: Dict[str, Any]) -> tuple[List[str], float]:
@@ -299,6 +450,9 @@ async def stream(ws: WebSocket, session_id: str) -> None:
         "sqi_sum": 0.0,
     }
     replay_task: Optional[asyncio.Task] = None
+    device_task: Optional[asyncio.Task] = None
+    # Demo-only artifact-injection toggle, shared with the replay task by reference.
+    artifact_state: Dict[str, Any] = {"on": False, "intensity": 1.0}
 
     try:
         while True:
@@ -306,8 +460,14 @@ async def stream(ws: WebSocket, session_id: str) -> None:
             mtype = msg.get("type")
 
             if mtype == "init":
+                source_kind = str(msg.get("source") or "").lower()
                 try:
-                    detector_channels, fs = _resolve_init_channels(msg)
+                    if source_kind == "device":
+                        from ..services.device_source import BRAIN_LIFE_FOCUS_PLUS as _proto
+                        detector_channels = list(_proto.channel_labels)
+                        fs = float(_proto.fs)
+                    else:
+                        detector_channels, fs = _resolve_init_channels(msg)
                     overrides = msg.get("config_overrides") or {}
                     if not isinstance(overrides, dict):
                         overrides = {}
@@ -324,7 +484,7 @@ async def stream(ws: WebSocket, session_id: str) -> None:
                 patient_id = msg.get("patient_id") or None
                 _ensure_session_row(session_id, detector_channels, fs, patient_id=patient_id)
                 replay_npz = msg.get("replay_npz") or msg.get("case_id")
-                replay_path = resolve_replay_case(replay_npz) if replay_npz else None
+                replay_path = resolve_stream_file(replay_npz) if replay_npz else None
                 await ws.send_json(
                     {
                         "type": "ready",
@@ -334,17 +494,47 @@ async def stream(ws: WebSocket, session_id: str) -> None:
                         "replay_npz": str(replay_path) if replay_path else None,
                     }
                 )
-                if replay_npz and not replay_path:
+                if source_kind == "device":
+                    if device_task and not device_task.done():
+                        device_task.cancel()
+                    device_task = asyncio.create_task(
+                        _run_device(
+                            ws, session_id, str(msg.get("device_address") or ""), counters
+                        )
+                    )
+                elif replay_npz and not replay_path:
                     await ws.send_json(
                         {"type": "error", "message": f"Replay npz not found: {replay_npz}"}
                     )
                 elif replay_path:
                     realtime = bool(msg.get("realtime", True))
+                    loop_replay = bool(msg.get("loop", False))
                     if replay_task and not replay_task.done():
                         replay_task.cancel()
                     replay_task = asyncio.create_task(
-                        _run_replay(ws, session_id, replay_path, counters, realtime=realtime)
+                        _run_replay(
+                            ws, session_id, replay_path, counters,
+                            realtime=realtime, artifact_state=artifact_state,
+                            loop=loop_replay,
+                        )
                     )
+
+            elif mtype == "artifact":
+                # Demo control: toggle synthetic artifact injection on the stream.
+                artifact_state["on"] = bool(msg.get("on", False))
+                intensity = msg.get("intensity")
+                if intensity is not None:
+                    try:
+                        artifact_state["intensity"] = max(0.0, float(intensity))
+                    except (TypeError, ValueError):
+                        pass
+                await ws.send_json(
+                    {
+                        "type": "artifact_state",
+                        "on": artifact_state["on"],
+                        "intensity": artifact_state["intensity"],
+                    }
+                )
 
             elif mtype == "data":
                 detector = sm.get_session(session_id)
@@ -355,6 +545,10 @@ async def stream(ws: WebSocket, session_id: str) -> None:
                     continue
                 try:
                     arr = np.asarray(msg.get("chunk", []), dtype=float)
+                    if artifact_state.get("on") and arr.ndim == 2 and arr.size:
+                        arr = apply_synthetic_artifact(
+                            arr, detector.fs, float(artifact_state.get("intensity", 1.0))
+                        )
                     mapped, _ = map_to_pipeline(
                         arr, detector_channels, fs=detector.fs
                     )
@@ -367,7 +561,7 @@ async def stream(ws: WebSocket, session_id: str) -> None:
                     continue
 
                 try:
-                    loop = asyncio.get_event_loop()
+                    loop = asyncio.get_running_loop()
                     events = await loop.run_in_executor(None, detector.update, mapped)
                 except Exception as exc:
                     logger.exception("Detector failed for session %s", session_id)
@@ -401,12 +595,13 @@ async def stream(ws: WebSocket, session_id: str) -> None:
         except Exception:
             pass
     finally:
-        if replay_task and not replay_task.done():
-            replay_task.cancel()
-            try:
-                await replay_task
-            except (asyncio.CancelledError, Exception):
-                pass
+        for _task in (replay_task, device_task):
+            if _task and not _task.done():
+                _task.cancel()
+                try:
+                    await _task
+                except (asyncio.CancelledError, Exception):
+                    pass
         sm.close_session(session_id)
         _finalise_session_row(
             session_id,

@@ -4,12 +4,12 @@ Build feature table for all patients in a manifest (parallel workers).
 Workers load their own .npz files to avoid large IPC transfers on Windows.
 
 Output:
-  dataset_real/feature_table_ischemic.csv
+  dataset_ischemic/feature_table_ischemic.csv
   dataset_healthy/feature_table_healthy.csv  (after PhysioNet download)
 
 Usage:
-  .venv/Scripts/python.exe build_feature_table.py
-  .venv/Scripts/python.exe build_feature_table.py ^
+  .venv/Scripts/python.exe scripts/build_feature_table.py
+  .venv/Scripts/python.exe scripts/build_feature_table.py ^
       --manifest dataset_healthy/manifest_healthy.csv ^
       --out dataset_healthy/feature_table_healthy.csv ^
       --workers 8
@@ -25,7 +25,7 @@ from pathlib import Path
 
 warnings.filterwarnings("ignore")
 
-ROOT = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parent.parent
 _BACKEND = str(ROOT / "backend")
 
 
@@ -89,12 +89,17 @@ def _process_row(args: tuple) -> tuple[str, list[dict]]:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--manifest",
-                        default=str(ROOT / "dataset_real" / "manifest_ischemic.csv"))
+                        default=str(ROOT / "dataset_ischemic" / "manifest_ischemic.csv"))
     parser.add_argument("--out",
-                        default=str(ROOT / "dataset_real" / "feature_table_ischemic.csv"))
+                        default=str(ROOT / "dataset_ischemic" / "feature_table_ischemic.csv"))
     parser.add_argument("--workers", type=int,
                         default=min(8, max(1, os.cpu_count() - 2)),
                         help="Parallel workers (default: min(8, cpu_count-2))")
+    parser.add_argument(
+        "--append",
+        action="store_true",
+        help="Append each completed patient to the output CSV immediately.",
+    )
     args = parser.parse_args()
 
     manifest_path = Path(args.manifest)
@@ -131,16 +136,35 @@ def main() -> None:
 
     t_start = time.time()
     all_rows: list[dict] = []
+    cols = ["patient_id", "label", "t_end_sec"] + list(ALL_FEATURES)
+
+    if args.append and out_path.exists():
+        out_path.unlink()
+
+    def save_rows(rows: list[dict]) -> None:
+        if not rows:
+            return
+        frame = pd.DataFrame(rows)
+        frame = frame[cols]
+        if args.append:
+            frame.to_csv(
+                out_path,
+                mode="a",
+                header=not out_path.exists(),
+                index=False,
+            )
+        else:
+            all_rows.extend(rows)
 
     if args.workers <= 1:
         for i, wargs in enumerate(worker_args):
             t0 = time.time()
             print(f"  [{i+1:3d}/{n}] {wargs[0]}", end="", flush=True)
             pid, rows = _process_row(wargs)
+            save_rows(rows)
             done = i + 1
             eta = (time.time() - t_start) / done * (n - done) / 60
             print(f"  windows={len(rows)}  [{time.time()-t0:.0f}s | ETA {eta:.0f}min]")
-            all_rows.extend(rows)
     else:
         from concurrent.futures import ProcessPoolExecutor, as_completed
         with ProcessPoolExecutor(max_workers=args.workers) as pool:
@@ -148,17 +172,26 @@ def main() -> None:
             done = 0
             for future in as_completed(futures):
                 pid, rows = future.result()
-                all_rows.extend(rows)
+                save_rows(rows)
                 done += 1
                 eta = (time.time() - t_start) / done * (n - done) / 60
                 print(f"  [{done:3d}/{n}] {pid}  windows={len(rows)}"
                       f"  [ETA {eta:.0f}min]", flush=True)
 
+    if args.append:
+        if not out_path.exists():
+            raise RuntimeError("No windows produced")
+        frame = pd.read_csv(out_path, usecols=["patient_id"])
+        total_min = (time.time() - t_start) / 60
+        print(f"\nDone: {len(frame):,} windows  |  {len(cols)} cols")
+        print(f"Time : {total_min:.1f} min")
+        print(f"Saved -> {out_path}")
+        return
+
     if not all_rows:
         raise RuntimeError("No windows produced — check SQI threshold and signal lengths.")
 
     frame = pd.DataFrame(all_rows)
-    cols = ["patient_id", "label", "t_end_sec"] + list(ALL_FEATURES)
     frame = frame[cols]
     frame.to_csv(out_path, index=False)
 

@@ -22,12 +22,14 @@ def test_brain_life_focus_plus_maps_to_18_channels() -> None:
     assert mapped.shape == (18, n_samples), "Output must have 18 rows"
     assert target == DEFAULT_CHANNELS
 
-    # 4 device channels: AF3/AF4 don't match any DEFAULT_CHANNELS entry,
-    # T7→T3 and T8→T4 do. So 2 rows are non-NaN, 16 rows are NaN.
+    # Device channels are the 2 BIPOLAR derivations "F3-T7"/"F4-T8", not raw
+    # monopolar electrodes. A bipolar signal is not equivalent to either of its
+    # monopolar electrodes under CAR reference, so neither name should alias
+    # onto any DEFAULT_CHANNELS entry: all 18 rows come back NaN (honest
+    # "no equivalent data"), not silently mislabeled as monopolar T3/T4.
+    assert len(device_channels) == 2
     nan_rows = int(np.isnan(mapped).all(axis=1).sum())
-    non_nan_rows = 18 - nan_rows
-    assert non_nan_rows == 2
-    assert nan_rows == 16
+    assert nan_rows == 18
 
 
 def test_alias_t7_maps_to_t3_row() -> None:

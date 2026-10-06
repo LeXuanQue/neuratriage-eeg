@@ -24,13 +24,18 @@ class RateLimiter:
         self._window = window_sec
         self._buckets: Dict[str, Deque[float]] = defaultdict(deque)
 
+    # Only honour X-Forwarded-For when the *direct* peer is a trusted proxy.
+    # Otherwise any client could spoof the header and rotate fake IPs to
+    # bypass the limiter (e.g. brute-forcing /api/auth/login).
+    _TRUSTED_PROXIES = {"127.0.0.1", "::1"}
+
     def _client_ip(self, request: Request) -> str:
-        forwarded = request.headers.get("x-forwarded-for")
-        if forwarded:
-            return forwarded.split(",")[0].strip()
-        if request.client:
-            return request.client.host
-        return "unknown"
+        peer = request.client.host if request.client else None
+        if peer in self._TRUSTED_PROXIES:
+            forwarded = request.headers.get("x-forwarded-for")
+            if forwarded:
+                return forwarded.split(",")[0].strip()
+        return peer or "unknown"
 
     def reset(self) -> None:
         self._buckets.clear()

@@ -94,9 +94,12 @@ def _send_email(
 
     subject = f"[NeuraTriage] Báo cáo EEG {week_label} — {patient_name}"
     sqi_str = f"{agg['sqi_mean']:.3f}" if agg["sqi_mean"] else "N/A"
+    # Escape DB-sourced values before embedding in the HTML email body.
+    safe_name = escape(patient_name or "")
+    safe_week = escape(week_label or "")
     body_html = (
-        f"<h2>NeuraTriage EEG — Báo cáo tuần {week_label}</h2>"
-        f"<p>Bệnh nhân: <b>{patient_name}</b></p>"
+        f"<h2>NeuraTriage EEG — Báo cáo tuần {safe_week}</h2>"
+        f"<p>Bệnh nhân: <b>{safe_name}</b></p>"
         f"<ul>"
         f"<li>Số phiên: {agg['session_count']}</li>"
         f"<li>Cảnh báo: {agg['alert_count']} (đã ack: {agg['ack_count']})</li>"
@@ -114,6 +117,7 @@ def _send_email(
     )
 
     sg = SendGridAPIClient(settings.sendgrid_api_key)
+    errors: list[Exception] = []
     for recipient in recipients:
         msg = Mail(
             from_email=(settings.sendgrid_from_email, settings.sendgrid_from_name),
@@ -126,8 +130,12 @@ def _send_email(
             sg.send(msg)
             logger.info("Report email sent to %s", recipient)
         except Exception as exc:
+            # One bad address must not block delivery to the others.
             logger.error("SendGrid error for %s: %s", recipient, exc)
-            raise
+            errors.append(exc)
+    if errors:
+        # Surface the first failure so the caller records status="failed".
+        raise errors[0]
 
 
 # ─── public API ───────────────────────────────────────────────────────────────

@@ -223,6 +223,7 @@ class PipelineConfig:
     artifact_clip_mad_factor: float = 9.0
     bandpass_low: float = 1.0
     bandpass_high: float = 35.0
+    bandpass_order: int = 4  # Butterworth order; 4 is what the deployed model was trained with
     notch_freq: Optional[float] = 50.0
     notch_q: float = 30.0
     rereference: str = "car"  # common average reference
@@ -389,7 +390,12 @@ class RealTimeStrokeDetector:
         trained_model: TrainedStrokeModel,
         config: Optional[PipelineConfig] = None,
         preprocess_online: bool = True,
+        window_model: Optional[Any] = None,
     ) -> None:
+        # window_model: anything with predict_proba_from_window(window) -> probs (e.g.
+        # riemann_model.RiemannStrokeModel). When set it scores the 4 s buffer directly
+        # and the entropy/MFDFA features are skipped; SQI gating is unchanged.
+        self.window_model = window_model
         self.model = trained_model
         self.config = config or PipelineConfig(**trained_model.config)
         self.fs = self.config.fs
@@ -437,21 +443,29 @@ class RealTimeStrokeDetector:
             entropy_window = self.buffer[:, end_rel - self.entropy_len : end_rel]
             mfdfa_window = self.buffer[:, end_rel - self.mfdfa_len : end_rel]
             sqi_window = self.sqi_buffer[:, end_rel - self.entropy_len : end_rel]
-            feats = build_feature_row_from_windows(
-                entropy_window=entropy_window,
-                mfdfa_window=mfdfa_window,
-                channels=self.channels,
-                fs=self.fs,
-                config=self.config,
-                sqi_window=sqi_window,
-            )
+            if self.window_model is not None:
+                feats = compute_sqi(sqi_window, self.fs, self.config)
+            else:
+                feats = build_feature_row_from_windows(
+                    entropy_window=entropy_window,
+                    mfdfa_window=mfdfa_window,
+                    channels=self.channels,
+                    fs=self.fs,
+                    config=self.config,
+                    sqi_window=sqi_window,
+                )
             t_sec = self.next_emit_sample / self.fs
-            event = self._infer_from_feature_dict(feats, timestamp_sec=t_sec)
+            event = self._infer_from_feature_dict(feats, timestamp_sec=t_sec, window=mfdfa_window)
             events.append(event)
             self.next_emit_sample += self.step_len
         return events
 
-    def _infer_from_feature_dict(self, feats: Mapping[str, float], timestamp_sec: float) -> Dict[str, Any]:
+    def _infer_from_feature_dict(
+        self,
+        feats: Mapping[str, float],
+        timestamp_sec: float,
+        window: Optional[np.ndarray] = None,
+    ) -> Dict[str, Any]:
         sqi = float(feats["sqi_total"])
         result: Dict[str, Any] = {
             "timestamp_sec": timestamp_sec,
@@ -467,7 +481,10 @@ class RealTimeStrokeDetector:
             result["status"] = "no-decision"
             return result
 
-        probs = self.model.predict_proba_from_features(feats)
+        if self.window_model is not None and window is not None:
+            probs = np.asarray(self.window_model.predict_proba_from_window(window), dtype=float)
+        else:
+            probs = self.model.predict_proba_from_features(feats)
         if self.smooth_probs is None:
             smooth = probs.copy()
         else:
@@ -692,7 +709,7 @@ def _build_filter_sos(fs: float, config: PipelineConfig, include_bandpass: bool 
         sos_sections.append(signal.tf2sos(b, a))
     if include_bandpass:
         bp = signal.butter(
-            N=4,
+            N=config.bandpass_order,
             Wn=[config.bandpass_low, config.bandpass_high],
             btype="bandpass",
             fs=fs,
@@ -839,10 +856,23 @@ def compute_welch_bandpower(
     return np.trapezoid(psd[:, mask], freqs[mask], axis=1)
 
 
+FLATLINE_REL = 1e-2  # a channel 40 dB below the median channel counts as flat
+
+
+def _median_power_ratio(num: np.ndarray, den: np.ndarray) -> float:
+    """Median over channels of num/den, unit-free; channels with no power are skipped."""
+    ok = np.isfinite(num) & np.isfinite(den) & (den > 0)
+    return float(np.median(num[ok] / den[ok])) if ok.any() else 0.0
+
+
 def compute_sqi(window: np.ndarray, fs: float, config: PipelineConfig) -> Dict[str, float]:
     window = np.asarray(window, dtype=float)
     stds = np.nanstd(window, axis=1)
-    flatline_ratio = float(np.mean(stds < 1e-6))
+    # Every threshold below is relative to the signal itself: recordings arrive in V,
+    # uV or raw ADC counts, and absolute floors (std < 1e-6, +EPS on V^2 band power)
+    # made SQI depend on the storage unit.
+    ref_std = float(np.nanmedian(stds))
+    flatline_ratio = float(np.mean(stds <= FLATLINE_REL * ref_std)) if ref_std > 0 else 1.0
 
     robust_scale = np.nanmedian(np.abs(window - np.nanmedian(window, axis=1, keepdims=True)))
     clip_threshold = 8.0 * robust_scale + EPS
@@ -851,8 +881,9 @@ def compute_sqi(window: np.ndarray, fs: float, config: PipelineConfig) -> Dict[s
     line_band = (max(config.notch_freq - 1.0, 0.1), min(config.notch_freq + 1.0, fs / 2 - EPS)) if config.notch_freq else (49.0, 51.0)
     broadband = (1.0, min(35.0, fs / 2 - EPS))
     hf_band = (config.high_freq_band[0], min(config.high_freq_band[1], fs / 2 - EPS))
-    line_ratio = float(np.median((compute_welch_bandpower(window, fs, line_band) + EPS) / (compute_welch_bandpower(window, fs, broadband) + EPS)))
-    hf_ratio = float(np.median((compute_welch_bandpower(window, fs, hf_band) + EPS) / (compute_welch_bandpower(window, fs, broadband) + EPS)))
+    broad_power = compute_welch_bandpower(window, fs, broadband)
+    line_ratio = _median_power_ratio(compute_welch_bandpower(window, fs, line_band), broad_power)
+    hf_ratio = _median_power_ratio(compute_welch_bandpower(window, fs, hf_band), broad_power)
 
     penalties = (
         0.45 * np.clip(flatline_ratio / 0.2, 0.0, 1.0)
@@ -874,6 +905,22 @@ def compute_profile(x: np.ndarray) -> np.ndarray:
     x = np.asarray(x, dtype=float)
     x = x[np.isfinite(x)]
     return np.cumsum(x - np.mean(x))
+
+
+def _segment_residual_variance(segments: np.ndarray, order: int) -> np.ndarray:
+    """Mean squared residual of a degree-`order` polynomial fit to every row.
+
+    `segments` has shape (n_segments, s); all rows share the abscissa t = 0..s-1,
+    so one least-squares projection detrends them all at once instead of calling
+    np.polyfit per segment (the real-time bottleneck: ~330k fits per minute).
+    Returns an array of shape (n_segments,).
+    """
+    s = segments.shape[1]
+    t = np.arange(s, dtype=float)
+    # Orthonormal basis of the polynomial space; residual = projection onto its complement.
+    q_basis, _ = np.linalg.qr(np.vander(t, order + 1))
+    residual = segments - (segments @ q_basis) @ q_basis.T
+    return np.mean(residual**2, axis=1)
 
 
 def _mfdfa_from_profile(
@@ -904,24 +951,15 @@ def _mfdfa_from_profile(
         ns = n // s
         if ns < 2:
             continue
-        vars_ = []
-        t = np.arange(s, dtype=float)
-        for v in range(ns):
-            seg = profile[v * s : (v + 1) * s]
-            coeff = np.polyfit(t, seg, order)
-            trend = np.polyval(coeff, t)
-            vars_.append(np.mean((seg - trend) ** 2))
-        for v in range(ns):
-            start = n - (v + 1) * s
-            seg = profile[start : start + s]
-            coeff = np.polyfit(t, seg, order)
-            trend = np.polyval(coeff, t)
-            vars_.append(np.mean((seg - trend) ** 2))
-        vars_ = np.maximum(np.asarray(vars_, dtype=float), EPS)
-
-        Fqs = []
-        for q in q_values:
-            Fqs.append((np.mean(vars_ ** (q / 2.0))) ** (1.0 / q))
+        # Same 2*ns segments as the classic MFDFA: ns from the start, ns from the end.
+        segments = np.concatenate(
+            [profile[: ns * s].reshape(ns, s), profile[n - ns * s :].reshape(ns, s)], axis=0
+        )
+        # Floor relative to this scale's own variances: an absolute EPS (1e-12) exceeds
+        # the residual variance of EEG stored in volts (~3e-13) and distorted q<0 moments.
+        raw_vars = _segment_residual_variance(segments, order)
+        vars_ = np.maximum(raw_vars, EPS * max(float(raw_vars.max()), np.finfo(float).tiny))
+        Fqs = (np.mean(vars_[:, None] ** (q_values[None, :] / 2.0), axis=0)) ** (1.0 / q_values)
         fluct.append(Fqs)
         valid_scales.append(s)
 

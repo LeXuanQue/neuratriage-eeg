@@ -22,7 +22,7 @@ function ntEegSample({channelIndex, mode, t}) {
 
 // ──────────────────────────────────────────────────────────────────
 // EEG Trace — animated rolling buffer
-window.EEGTrace = function EEGTrace({channelIndex, label, mode="HS", height=28, width="100%", animated=true, color}) {
+window.EEGTrace = function EEGTrace({channelIndex, label, mode="IS", height=28, width="100%", animated=true, color}) {
   const POINTS = 280, sr = 64;
   const [buffer, setBuffer] = useS_v(() => {
     const b = new Array(POINTS).fill(0);
@@ -89,11 +89,24 @@ window.EEGTraceRaw = function EEGTraceRaw({data, label, height=28, color}) {
   }
   const n = data.length;
   const stepX = W / (n - 1);
-  const max = data.reduce((a, b) => Math.max(a, Math.abs(b)), 1e-9);
+  // Clean the trace so it reads like clinical EEG instead of a tangled raw dump:
+  //  1) high-pass by subtracting a slow EMA baseline (kills DC offset + drift),
+  //  2) robust scale from the 95th-pct amplitude (ignores spikes),
+  //  3) clamp into the lane so channels never bleed into each other.
+  const clean = new Array(n);
+  let baseline = data[0];
+  const BETA = 0.02; // slow baseline tracker (high-pass corner)
+  for (let i = 0; i < n; i++) {
+    baseline = BETA * data[i] + (1 - BETA) * baseline;
+    clean[i] = data[i] - baseline;
+  }
+  const absSorted = clean.map(Math.abs).sort((a, b) => a - b);
+  const p95 = absSorted[Math.min(n - 1, Math.floor(n * 0.95))] || 1e-9;
+  const scale = (p95 < 1e-9 ? 1e-9 : p95) * 2.4;
   let d = "";
   for (let i = 0; i < n; i++) {
     const x = i * stepX;
-    const y = Math.max(0, Math.min(H, H / 2 - (data[i] / (max * 2.2)) * H * 0.85));
+    const y = Math.max(0, Math.min(H, H / 2 - (clean[i] / scale) * H * 0.85));
     d += (i === 0 ? "M" : "L") + x.toFixed(2) + "," + y.toFixed(2) + " ";
   }
   return (
@@ -109,7 +122,7 @@ window.EEGTraceRaw = function EEGTraceRaw({data, label, height=28, color}) {
 
 // rawData: optional array of per-channel sample arrays from WS/replay stream.
 // Missing channel data is rendered as an empty trace, never as synthetic EEG.
-window.EEGStack = function EEGStack({channels, mode="HS", animated=true, traceHeight=28, color, rawData}) {
+window.EEGStack = function EEGStack({channels, mode="IS", animated=true, traceHeight=28, color, rawData}) {
   return (
     <div style={{display:"flex", flexDirection:"column", gap:1}}>
       {channels.map((ch, i) => {
@@ -153,12 +166,11 @@ window.RiskGauge = function RiskGauge({size=180, value, label, sublabel, color})
 };
 
 // ──────────────────────────────────────────────────────────────────
-// Risk bars 3-class
+// Risk bars: binary NS / IS only.
 window.RiskBars = function RiskBars({probs, labels}) {
   const items = [
     {key:"NS", value:probs.NS, color:"var(--ns)", soft:"var(--ns-soft)"},
     {key:"IS", value:probs.IS, color:"var(--is)", soft:"var(--is-soft)"},
-    {key:"HS", value:probs.HS, color:"var(--hs)", soft:"var(--hs-soft)"},
   ];
   return (
     <div style={{display:"flex", flexDirection:"column", gap:11}}>
@@ -217,7 +229,7 @@ window.FeatureAttribution = function FeatureAttribution({features, color}) {
 
 // ──────────────────────────────────────────────────────────────────
 // Brain Topomap with optional heat blob
-window.BrainTopomap = function BrainTopomap({size=200, channels, valuesByChan={}, mode="HS", showLabels=true}) {
+window.BrainTopomap = function BrainTopomap({size=200, channels, valuesByChan={}, mode="IS", showLabels=true}) {
   const values = useM_v(() => {
     if (Object.keys(valuesByChan).length) return valuesByChan;
     return {};
@@ -266,7 +278,7 @@ window.BrainTopomap = function BrainTopomap({size=200, channels, valuesByChan={}
 };
 
 // ──────────────────────────────────────────────────────────────────
-// Risk timeline — 3 lines stacked, with alert markers
+// Risk timeline: NS / IS trends with alert markers.
 window.RiskTimeline = function RiskTimeline({width=400, height=90, history, alerts=[], live=false}) {
   const xAt = (i) => (i / (history.length-1)) * (width-20) + 10;
   const yAt = (v) => height - 12 - v * (height - 22);
@@ -278,7 +290,6 @@ window.RiskTimeline = function RiskTimeline({width=400, height=90, history, aler
       ))}
       <path d={pathFor("NS")} fill="none" stroke="var(--ns)" strokeWidth="1.2" opacity="0.85"/>
       <path d={pathFor("IS")} fill="none" stroke="var(--is)" strokeWidth="1.2" opacity="0.85"/>
-      <path d={pathFor("HS")} fill="none" stroke="var(--hs)" strokeWidth="1.6" style={{filter:"drop-shadow(0 0 3px var(--hs))"}}/>
       {alerts.map((a, i) => (
         <g key={i}>
           <line x1={xAt(a.idx)} x2={xAt(a.idx)} y1={6} y2={height-10} stroke="var(--hs)" strokeDasharray="3 3" opacity="0.6"/>
@@ -286,7 +297,7 @@ window.RiskTimeline = function RiskTimeline({width=400, height=90, history, aler
         </g>
       ))}
       {live && (
-        <circle cx={xAt(history.length-1)} cy={yAt(history[history.length-1].HS)} r="3.5" fill="var(--hs)">
+        <circle cx={xAt(history.length-1)} cy={yAt(history[history.length-1].IS)} r="3.5" fill="var(--is)">
           <animate attributeName="r" values="3.5;6;3.5" dur="1.4s" repeatCount="indefinite"/>
           <animate attributeName="opacity" values="1;0.3;1" dur="1.4s" repeatCount="indefinite"/>
         </circle>
@@ -297,7 +308,7 @@ window.RiskTimeline = function RiskTimeline({width=400, height=90, history, aler
 
 // ──────────────────────────────────────────────────────────────────
 // Band power bars
-window.BandPower = function BandPower({mode="HS", width=280, height=120, rawData=null, fs=256}) {
+window.BandPower = function BandPower({mode="IS", width=280, height=120, rawData=null, fs=256}) {
   let bands = [];
   bands = useM_v(() => {
     function goertzelPower(samples, freq, sampleRate) {
@@ -334,7 +345,7 @@ window.BandPower = function BandPower({mode="HS", width=280, height=120, rawData
   }, [mode, rawData, fs]);
   const pad = 24;
   const barW = (width - pad*2) / bands.length - 8;
-  const color = mode==="NS"?"var(--ns)":mode==="IS"?"var(--is)":"var(--hs)";
+  const color = mode==="NS"?"var(--ns)":"var(--is)";
   return (
     <svg width={width} height={height}>
       <line x1={pad} y1={height-22} x2={width-pad} y2={height-22} stroke="var(--line-2)"/>
@@ -359,12 +370,11 @@ window.BandPower = function BandPower({mode="HS", width=280, height=120, rawData
 
 // ──────────────────────────────────────────────────────────────────
 // Multifractal spectrum f(α) - inverted U
-window.MultifractalSpectrum = function MultifractalSpectrum({width=300, height=160, mode="HS"}) {
+window.MultifractalSpectrum = function MultifractalSpectrum({width=300, height=160, mode="IS"}) {
   const params = {
     NS: {center:1.0, w:0.45, h:1.0, color:"var(--ns)"},
     IS: {center:1.15, w:0.30, h:0.92, color:"var(--is)"},
-    HS: {center:1.25, w:0.55, h:0.95, color:"var(--hs)"},
-  }[mode];
+  }[mode] || {center:1.15, w:0.30, h:0.92, color:"var(--is)"};
   const xMin=0.4, xMax=1.7, pad=28;
   const xAt = a => pad + (a-xMin)/(xMax-xMin) * (width-pad-12);
   const yAt = f => height-pad+4 - f * (height-pad-18);
@@ -393,7 +403,7 @@ window.MultifractalSpectrum = function MultifractalSpectrum({width=300, height=1
 // ──────────────────────────────────────────────────────────────────
 // Confusion matrix
 window.ConfusionMatrix = function ConfusionMatrix({size=200, matrix, labels}) {
-  const cell = size / 3;
+  const cell = size / Math.max(1, labels.length);
   const max = Math.max(...matrix.flat());
   return (
     <svg width={size+50} height={size+30}>
@@ -458,8 +468,8 @@ window.SQIBar = function SQIBar({value, width=140}) {
 
 // ──────────────────────────────────────────────────────────────────
 // Animated probability sweep — single channel (used in dashboard cards)
-window.ProbAreaChart = function ProbAreaChart({history, width=300, height=80, classKey="HS"}) {
-  const color = classKey==="NS"?"var(--ns)":classKey==="IS"?"var(--is)":"var(--hs)";
+window.ProbAreaChart = function ProbAreaChart({history, width=300, height=80, classKey="IS"}) {
+  const color = classKey==="NS"?"var(--ns)":"var(--is)";
   const xAt = i => (i/(history.length-1))*width;
   const yAt = v => height - 6 - v*(height-12);
   const pts = history.map((h,i)=>`${xAt(i).toFixed(1)},${yAt(h[classKey]).toFixed(1)}`);

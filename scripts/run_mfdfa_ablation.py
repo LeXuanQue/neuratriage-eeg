@@ -9,10 +9,10 @@ This script is stricter than run_cv_ablation.py:
 - reports fold-wise paired deltas for the MFDFA comparisons.
 
 Recommended report run:
-  .venv\\Scripts\\python.exe run_mfdfa_ablation.py --n-trials 30 --folds 5
+  .venv\\Scripts\\python.exe scripts\\run_mfdfa_ablation.py --n-trials 30 --folds 5
 
 Fast sanity check:
-  .venv\\Scripts\\python.exe run_mfdfa_ablation.py --fast --folds 3
+  .venv\\Scripts\\python.exe scripts\\run_mfdfa_ablation.py --fast --folds 3
 """
 from __future__ import annotations
 
@@ -28,7 +28,7 @@ from typing import Iterable
 
 warnings.filterwarnings("ignore")
 
-ROOT = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parent.parent
 BACKEND = ROOT / "backend"
 if str(BACKEND) not in sys.path:
     sys.path.insert(0, str(BACKEND))

@@ -3,8 +3,8 @@
 Channel selection is detection-first, not preset-first:
 
 * `GET /api/devices/presets` returns DEVICE_PRESETS purely as *template
-  hints* the frontend can show in a dropdown (e.g. "Brain-Life Focus+ has 4
-  channels by default"). They are NOT authoritative — different units of the
+  hints* the frontend can show in a dropdown (e.g. Focus+ electrode labels).
+  They are NOT authoritative — different units of the
   same headset can ship with different montages.
 * `POST /api/devices/probe` is the source of truth. After the frontend opens a
   BLE / serial / SDK link to the real headset, it reads the live channel list
@@ -66,6 +66,20 @@ class DeviceProbeRequest(BaseModel):
 @router.get("/presets")
 def list_presets(_: DemoUser = Depends(get_current_user)):
     return ok(DEVICE_PRESETS)
+
+
+@router.get("/live-status")
+def live_device_status(_: DemoUser = Depends(get_current_user)):
+    """Readiness of the built-in BLE device profile (Brain-Life Focus+).
+
+    Lets the UI show whether a live session can start. Until `scripts/ble_probe.py`
+    confirms the real GATT UUIDs and flips `configured=True`, `ready` is False and
+    the WebSocket refuses a `source:"device"` init.
+    """
+    from ..services.device_source import BRAIN_LIFE_FOCUS_PLUS
+    from ..services.device_stream import device_readiness
+
+    return ok(device_readiness(BRAIN_LIFE_FOCUS_PLUS))
 
 
 @router.post("/probe")

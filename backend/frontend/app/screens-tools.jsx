@@ -42,15 +42,17 @@ window.SetupScreen = function SetupScreen({t, lang}) {
     return (b/(1024*1024)).toFixed(1) + " MB";
   }
   function probsFromOverall(o) {
-    return {NS: o?.p_nonstroke ?? 0, IS: o?.p_ischemic ?? 0, HS: o?.p_hemorrhagic ?? 0};
+    const ns = Number(o?.p_nonstroke ?? 0);
+    const is = Number(o?.p_ischemic ?? 0);
+    const sum = ns + is || 1;
+    return {NS: ns / sum, IS: is / sum};
   }
   function modeFromResult(overall) {
     const cls = String(overall?.pred_class || "").toLowerCase().replace(/[_\s]+/g, "-");
-    if (["hemorrhagic", "hs", "2"].includes(cls)) return "HS";
     if (["ischemic", "is", "1"].includes(cls)) return "IS";
     if (["non-stroke", "nonstroke", "ns", "normal", "0"].includes(cls)) return "NS";
     const probs = probsFromOverall(overall);
-    return Object.entries(probs).sort((a, b) => Number(b[1] || 0) - Number(a[1] || 0))[0]?.[0] || "NS";
+    return Number(probs.IS || 0) >= Number(probs.NS || 0) ? "IS" : "NS";
   }
   function setPatientField(key, value) {
     setPatientForm(prev => ({...prev, [key]: value}));
@@ -138,9 +140,11 @@ window.SetupScreen = function SetupScreen({t, lang}) {
     setError(null); setRunning(true); setResult(null);
     try {
       const uploadId = file.upload_id || "";
+      // patient_id here is a pipeline label, not a DB id — don't send the
+      // free-text name. The real patient is linked right after via
+      // upsertPatientFromAnalysis; the backend defaults this to "unknown".
       const data = await window.NTApi.post("/api/infer", {
         upload_id: uploadId,
-        patient_id: patientForm.full_name.trim(),
         max_duration_sec: 30,
       });
       setResult(data);
@@ -249,7 +253,7 @@ window.SetupScreen = function SetupScreen({t, lang}) {
                   {result.source?.preview_limited ? ` · preview ${Number(result.source.analysis_duration_sec || 0).toFixed(0)}s/${Number(result.source.duration_sec || 0).toFixed(0)}s` : ""} · Research use only
                 </div>
                 {Object.entries(probsFromOverall(result.overall)).map(([k, v]) => {
-                  const accent = k==="HS"?"var(--hs)":k==="IS"?"var(--is)":"var(--ns)";
+                  const accent = k==="IS"?"var(--is)":"var(--ns)";
                   return (
                     <div key={k} style={{display:"grid", gridTemplateColumns:"40px 1fr 50px", gap:10, alignItems:"center", marginBottom:6, fontSize:12}}>
                       <span className="mono" style={{color:"var(--ink-3)"}}>{k}</span>
@@ -261,7 +265,7 @@ window.SetupScreen = function SetupScreen({t, lang}) {
                   );
                 })}
                 <div style={{fontSize:11.5, color:"var(--ink-3)", marginTop:10, fontFamily:"var(--font-mono)"}}>
-                  SQI mean: {result.overall.sqi.toFixed(3)} · latest: {result.latest.pred_class} @ t={result.latest.t_end_sec.toFixed(1)}s
+                  SQI mean: {result.overall?.sqi != null ? Number(result.overall.sqi).toFixed(3) : "—"} · latest: {result.latest ? `${result.latest.pred_class} @ t=${Number(result.latest.t_end_sec ?? 0).toFixed(1)}s` : "—"}
                 </div>
               </div>
             )}
@@ -419,8 +423,8 @@ window.SetupScreen = function SetupScreen({t, lang}) {
             ))}
             <div style={{fontSize:11.5, color:"var(--ink-3)", lineHeight:1.55, marginTop:14}}>
               {lang==="vi"
-                ? "HS replay dùng các đoạn UCLH ICH đã convert. Kết quả dùng cho demo nghiên cứu, chưa phải claim lâm sàng."
-                : "HS replay uses converted UCLH ICH segments. Results are research demo evidence, not clinical claims."}
+                ? "Replay chính chỉ hiển thị NS/IS để khớp phạm vi bằng chứng binary của app. Phân tầng đột quỵ rộng hơn là hướng mở rộng tương lai."
+                : "The primary replay list is limited to NS/IS to match the app's binary evidence scope. Broader stroke subtyping remains future work."}
             </div>
             {error && (
               <div style={{marginTop:14, padding:12, background:"var(--bg-3)", borderLeft:"3px solid var(--hs)", borderRadius:6, fontSize:12, color:"var(--ink)"}}>
@@ -437,7 +441,7 @@ window.SetupScreen = function SetupScreen({t, lang}) {
                   </span>
                 </div>
                 {Object.entries(probsFromOverall(result.overall)).map(([k, v]) => {
-                  const accent = k==="HS"?"var(--hs)":k==="IS"?"var(--is)":"var(--ns)";
+                  const accent = k==="IS"?"var(--is)":"var(--ns)";
                   return (
                     <div key={k} style={{display:"grid", gridTemplateColumns:"32px 1fr 46px", gap:8, alignItems:"center", marginBottom:6, fontSize:12}}>
                       <span className="mono" style={{color:"var(--ink-3)"}}>{k}</span>
@@ -449,7 +453,7 @@ window.SetupScreen = function SetupScreen({t, lang}) {
                   );
                 })}
                 <div className="mono" style={{fontSize:10.5, color:"var(--ink-3)", marginTop:10}}>
-                  {result.source?.mode || "replay_case"} · SQI {result.overall.sqi.toFixed(3)}
+                  {result.source?.mode || "replay_case"} · SQI {result.overall?.sqi != null ? Number(result.overall.sqi).toFixed(3) : "—"}
                 </div>
               </div>
             )}
@@ -473,20 +477,10 @@ window.InsightsScreen = function InsightsScreen({frame, t, lang}) {
   const bestSqi = conditions.find(c => c.key === "apfu_mfdfa_sqi")
     || conditions.find(c => c.key === "apfu_sqi")
     || best;
-  const exploratoryHs = research.exploratory_datasets?.hemorrhagic || {};
-  const threeClass = research.exploratory_results?.three_class || {};
-  const threeConditions = Array.isArray(threeClass.conditions) ? threeClass.conditions : [];
-  const threeComparisons = Array.isArray(threeClass.paired_comparisons) ? threeClass.paired_comparisons : [];
-  const threeDataset = threeClass.dataset || {};
-  const threePatients = threeDataset.patient_label_counts || {};
-  const mfdfaTrend = threeComparisons[0] || null;
-  const hsQc = research.qc?.hemorrhagic || {};
-  const qcRows = Array.isArray(hsQc.rows) ? hsQc.rows : [];
   const evidenceBadges = [
     {label:"NS/IS cohort", tone:"ns", body:`${patientCounts["0"] || 0} NS / ${patientCounts["1"] || 0} IS`},
     {label:"Macro-F1", tone:"ns", body: bestSqi ? Number(bestSqi.macro_f1 || 0).toFixed(3) : "pending"},
     {label:"Patient-F1 / AUC", tone:"is", body: bestSqi ? `${Number(bestSqi.patient_macro_f1 || 0).toFixed(3)} / ${Number(bestSqi.auc || 0).toFixed(3)}` : "pending"},
-    {label:"HS exploratory", tone:"hs", body:`${exploratoryHs.n_patients || 0} patients; +1 for 5-fold`},
   ];
   if (true) {
     return (
@@ -496,8 +490,8 @@ window.InsightsScreen = function InsightsScreen({frame, t, lang}) {
             <span className="tag ns">Validated scope</span>
             <div style={{fontSize:13, color:"var(--ink-2)", lineHeight:1.5}}>
               {lang==="vi"
-                ? "Bằng chứng hiện tại được trình bày như binary NS/IS. HS chỉ là exploratory 4 bệnh nhân và chưa validated 3-class."
-                : "Current validated evidence is binary NS/IS. HS is exploratory with 4 patients and is not validated for 3-class use."}
+                ? "Bằng chứng và app hiện tại được đóng scope ở binary NS/IS. Phân tầng đột quỵ rộng hơn chưa có cohort đủ mạnh để làm claim chính."
+                : "The current evidence and app are scoped to binary NS/IS. Broader stroke subtyping is not a primary claim without a sufficiently powered cohort."}
             </div>
           </div>
         </div>
@@ -547,83 +541,6 @@ window.InsightsScreen = function InsightsScreen({frame, t, lang}) {
           </div>
           <div style={{marginTop:14, fontSize:11.5, color:"var(--ink-3)", lineHeight:1.55}}>
             {(research.limitations || []).map((x, i) => <div key={i}>• {x}</div>)}
-          </div>
-        </div>
-        <div className="panel" style={{padding:18}}>
-          <div className="stat-lbl" style={{marginBottom:14}}>{lang==="vi"?"Cohort HS exploratory":"Exploratory HS cohort"}</div>
-          <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:12}}>
-            {[
-              ["HS patients", exploratoryHs.available ? exploratoryHs.n_patients : "—"],
-              ["HS windows", exploratoryHs.available ? exploratoryHs.n_windows : "—"],
-              ["HS SQI mean", exploratoryHs.sqi_mean != null ? Number(exploratoryHs.sqi_mean).toFixed(3) : "—"],
-              ["5-fold ready", exploratoryHs.validated_for_3class_cv ? "yes" : "not yet"],
-            ].map(([k, v]) => (
-              <div key={k} style={{padding:12, background:"var(--bg-3)", borderRadius:6, border:"1px solid var(--line-2)"}}>
-                <div className="mono" style={{fontSize:10.5, color:"var(--ink-3)"}}>{k}</div>
-                <div style={{fontSize:16, fontWeight:600, marginTop:5}}>{v}</div>
-              </div>
-            ))}
-          </div>
-          <div style={{fontSize:11.5, color:"var(--ink-3)", marginTop:12, lineHeight:1.55}}>
-            {lang==="vi"
-              ? "Đã tích hợp P3, P5, P6A, P11 từ UCLH ICH. Cần thêm ít nhất 1 HS patient để dùng 5-fold CV như kế hoạch."
-              : "P3, P5, P6A, and P11 UCLH ICH are integrated. One more HS patient is needed for the planned 5-fold CV."}
-          </div>
-        </div>
-        <div className="panel" style={{padding:18}}>
-          <div className="stat-lbl" style={{marginBottom:14}}>{lang==="vi"?"3-class exploratory":"3-class exploratory"}</div>
-          <div style={{display:"grid", gap:8}}>
-            {threeConditions.map((c) => (
-              <div key={c.key} style={{display:"grid", gridTemplateColumns:"1fr 70px 70px", gap:10, alignItems:"center", padding:"9px 10px", background:"var(--bg-3)", border:"1px solid var(--line-2)", borderRadius:6}}>
-                <div>
-                  <div style={{fontSize:12.5, fontWeight:600}}>{c.label}</div>
-                  <div className="mono" style={{fontSize:10.5, color:"var(--ink-3)"}}>{c.n_features} features</div>
-                </div>
-                <div className="mono" style={{fontSize:11, color:"var(--ink-2)"}}>F1 {Number(c.macro_f1 || 0).toFixed(3)}</div>
-                <div className="mono" style={{fontSize:11, color:"var(--ink-2)"}}>ptF1 {Number(c.patient_macro_f1 || 0).toFixed(3)}</div>
-              </div>
-            ))}
-          </div>
-          <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:12, marginTop:12}}>
-            <div style={{padding:12, background:"var(--bg-3)", borderRadius:6, border:"1px solid var(--line-2)"}}>
-              <div className="mono" style={{fontSize:10.5, color:"var(--ink-3)"}}>Patients NS / IS / HS</div>
-              <div style={{fontSize:16, fontWeight:600, marginTop:5}}>{threePatients["0"] || 0} / {threePatients["1"] || 0} / {threePatients["2"] || 0}</div>
-            </div>
-            <div style={{padding:12, background:"var(--bg-3)", borderRadius:6, border:"1px solid var(--line-2)"}}>
-              <div className="mono" style={{fontSize:10.5, color:"var(--ink-3)"}}>MFDFA delta</div>
-              <div style={{fontSize:16, fontWeight:600, marginTop:5}}>{mfdfaTrend ? `+${Number(mfdfaTrend.mean_delta || 0).toFixed(3)}` : "—"}</div>
-            </div>
-          </div>
-          <div style={{fontSize:11.5, color:"var(--ink-3)", marginTop:12, lineHeight:1.55}}>
-            {mfdfaTrend
-              ? `4-fold fast check: ${mfdfaTrend.verdict || "exploratory"}; p=${Number(mfdfaTrend.p_value || 0).toFixed(3)}.`
-              : "3-class exploratory result not available yet."}
-          </div>
-        </div>
-        <div className="panel" style={{padding:18}}>
-          <div className="stat-lbl" style={{marginBottom:14}}>{lang==="vi"?"QC hemorrhagic":"Hemorrhagic QC"}</div>
-          <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:12, marginBottom:12}}>
-            {[
-              ["Retained windows", hsQc.total_retained_windows || "—"],
-              ["QC SQI mean", hsQc.sqi_mean != null ? Number(hsQc.sqi_mean).toFixed(3) : "—"],
-              ["Amplitude warnings", hsQc.high_amplitude_warning_count ?? "—"],
-              ["QC patients", hsQc.n_patients || "—"],
-            ].map(([k, v]) => (
-              <div key={k} style={{padding:12, background:"var(--bg-3)", borderRadius:6, border:"1px solid var(--line-2)"}}>
-                <div className="mono" style={{fontSize:10.5, color:"var(--ink-3)"}}>{k}</div>
-                <div style={{fontSize:16, fontWeight:600, marginTop:5}}>{v}</div>
-              </div>
-            ))}
-          </div>
-          <div style={{display:"grid", gap:6}}>
-            {qcRows.slice(0, 4).map((row) => (
-              <div key={row.patient_id} style={{display:"grid", gridTemplateColumns:"1fr 44px 52px 52px", gap:8, alignItems:"center", fontSize:11.5, padding:"6px 0", borderBottom:"1px solid var(--line)"}}>
-                <div className="mono" style={{overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", color:"var(--ink-2)"}}>{row.patient_id}</div>
-                <div className="mono" style={{color:"var(--ink-3)", textAlign:"right"}}>{row.retained_windows}</div>
-                <div className="mono" style={{color:"var(--ink-3)", textAlign:"right"}}>{Number(row.sqi_mean || 0).toFixed(2)}</div>
-                <div style={{textAlign:"right"}}><span className={`tag ${row.high_amplitude_warning ? "is" : "ns"}`} style={{fontSize:10}}>{row.high_amplitude_warning ? "amp" : "ok"}</span></div>
-              </div>
-            ))}
           </div>
         </div>
         <div className="panel" style={{padding:18}}>

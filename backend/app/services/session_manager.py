@@ -14,6 +14,7 @@ from eeg_stroke_pipeline import (
     RealTimeStrokeDetector,
 )
 
+from ..config import REPO_ROOT, get_settings
 from .model_manager import ModelManager
 
 
@@ -58,7 +59,13 @@ class SessionManager:
             filtered = {k: v for k, v in cfg_dict.items() if k in allowed}
             config = PipelineConfig(**filtered)
 
-        detector = RealTimeStrokeDetector(model, config=config, preprocess_online=True)
+        settings = get_settings()
+        window_model = ModelManager.get().get_window_model(
+            settings.realtime_model, REPO_ROOT / settings.riemann_model_path
+        )
+        detector = RealTimeStrokeDetector(
+            model, config=config, preprocess_online=True, window_model=window_model
+        )
         with self._lock:
             self._sessions[session_id] = detector
         logger.info(

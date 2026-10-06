@@ -15,6 +15,25 @@ from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from .config import FRONTEND_DIR, get_settings
+
+
+class RevalidatingStaticFiles(StaticFiles):
+    """Serve the frontend with `Cache-Control: no-cache`.
+
+    There is no build step here: app.html and the shared/*.js + app/*.jsx
+    bundles are separate files that must stay in lockstep. With no explicit
+    Cache-Control a browser falls back to heuristic caching and can pair a NEW
+    app.html with a STALE i18n.js, which blows up as
+    "Cannot read properties of undefined" on the first missing translation key.
+
+    `no-cache` does not disable caching — the ETag still yields a cheap 304 —
+    it only forbids reusing a copy without asking the server first.
+    """
+
+    def file_response(self, *args, **kwargs):  # type: ignore[override]
+        response = super().file_response(*args, **kwargs)
+        response.headers["Cache-Control"] = "no-cache, must-revalidate"
+        return response
 from .database import init_db
 from .envelope import (
     EnvelopeError,
@@ -26,6 +45,7 @@ from .envelope import (
 from .routers import alerts as alerts_router
 from .routers import auth as auth_router
 from .routers import dashboard as dashboard_router
+from .routers import demo as demo_router
 from .routers import devices as devices_router
 from .routers import files as files_router
 from .routers import inference as inference_router
@@ -128,6 +148,7 @@ def create_app() -> FastAPI:
     app.include_router(files_router.router)
     app.include_router(inference_router.router)
     app.include_router(devices_router.router)
+    app.include_router(demo_router.router)
     app.include_router(sessions_router.router)
     app.include_router(patients_router.router)
     app.include_router(alerts_router.router)
@@ -139,7 +160,7 @@ def create_app() -> FastAPI:
     if FRONTEND_DIR.is_dir():
         app.mount(
             "/",
-            StaticFiles(directory=str(FRONTEND_DIR), html=True),
+            RevalidatingStaticFiles(directory=str(FRONTEND_DIR), html=True),
             name="frontend",
         )
     else:

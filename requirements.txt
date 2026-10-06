@@ -16,6 +16,10 @@ APScheduler>=3.10,<4
 reportlab>=4.0,<5
 sendgrid>=6.11,<7
 
+# Live EEG device (Bluetooth LE) — only needed to stream from real hardware.
+# The app, tests, and CI run without it (imported lazily in device_source.py).
+bleak>=0.22,<1
+
 # EEG/ML pipeline
 numpy>=2.0,<3  # SQI uses np.trapezoid, added in NumPy 2.0
 scipy>=1.11,<2

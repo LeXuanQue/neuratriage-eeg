@@ -62,21 +62,18 @@ window.DashboardScreen = function DashboardScreen({frame, t, lang, channels, ani
 
   function modeFromAnalysis(a) {
     const cls = String(a?.overall?.pred_class || "").toLowerCase().replace(/[_\s]+/g, "-");
-    if (["hemorrhagic", "hs", "2"].includes(cls)) return "HS";
     if (["ischemic", "is", "1"].includes(cls)) return "IS";
     if (["non-stroke", "nonstroke", "ns", "normal", "0"].includes(cls)) return "NS";
     const overall = a?.overall || {};
     const probs = {
       NS: Number(overall.p_nonstroke || 0),
       IS: Number(overall.p_ischemic || 0),
-      HS: Number(overall.p_hemorrhagic || 0),
     };
-    return Object.entries(probs).sort((x, y) => y[1] - x[1])[0]?.[0] || "NS";
+    return Number(probs.IS || 0) >= Number(probs.NS || 0) ? "IS" : "NS";
   }
   function probFromAnalysis(a, mode) {
     const overall = a?.overall || {};
     if (mode === "IS") return Number(overall.p_ischemic || 0);
-    if (mode === "HS") return Number(overall.p_hemorrhagic || 0);
     return Number(overall.p_nonstroke || 0);
   }
   const analysisBeds = currentAnalysis?.overall ? (() => {
@@ -108,7 +105,6 @@ window.DashboardScreen = function DashboardScreen({frame, t, lang, channels, ani
   const summary = {
     NS: byClass["non-stroke"] || 0,
     IS: byClass["ischemic"] || 0,
-    HS: byClass["hemorrhagic"] || 0,
   };
   const dataMode = apiData ? "BACKEND" : (summaryState.loading ? "LOADING" : "OFFLINE");
 
@@ -125,7 +121,6 @@ window.DashboardScreen = function DashboardScreen({frame, t, lang, channels, ani
           <div className="stat-sub" style={{display:"flex", gap:10, marginTop:10, fontFamily:"var(--font-mono)"}}>
             <span title={lang==="vi"?"Cảnh báo NS hôm nay":"NS alerts today"}><span className="dot ns"/> {summary.NS}</span>
             <span style={{marginLeft:6}} title={lang==="vi"?"Cảnh báo IS hôm nay":"IS alerts today"}><span className="dot is"/> {summary.IS}</span>
-            <span style={{marginLeft:6}} title={lang==="vi"?"Cảnh báo HS hôm nay":"HS alerts today"}><span className="dot hs"/> {summary.HS}</span>
           </div>
         </div>
         <div className="panel" style={{padding:18}}>
@@ -175,7 +170,7 @@ window.DashboardScreen = function DashboardScreen({frame, t, lang, channels, ani
                   <window.NTIcon name="device" size={12}/>{lang==="vi"?"Kết nối thiết bị":"Connect device"}
                 </button>
                 <button className="btn btn-sm" onClick={() => window.dispatchEvent(new CustomEvent("nt:nav", {detail:{tab:"setup"}}))}>
-                  <window.NTIcon name="setup" size={12}/>{lang==="vi"?"Chay replay":"Run replay"}
+                  <window.NTIcon name="setup" size={12}/>{lang==="vi"?"Chạy replay":"Run replay"}
                 </button>
                 <button className="btn btn-sm btn-primary" onClick={() => setShowNewPatient(true)}>
                   <window.NTIcon name="plus" size={12}/>{lang==="vi"?"Tạo bệnh nhân":"Create patient"}
@@ -186,7 +181,7 @@ window.DashboardScreen = function DashboardScreen({frame, t, lang, channels, ani
         ) : (
         <div style={{display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(260px, 1fr))", gap:1, background:"var(--line)"}}>
           {beds.map((b, i) => {
-            const accent = b.mode==="NS"?"var(--ns)":b.mode==="IS"?"var(--is)":"var(--hs)";
+            const accent = b.mode==="NS"?"var(--ns)":"var(--is)";
             return (
               <div key={i} style={{background:"var(--bg-2)", padding:16, position:"relative"}}>
                 <div style={{position:"absolute", top:0, left:0, right:0, height:2, background:accent, opacity:0.5, boxShadow:`0 0 6px ${accent}`}}/>
@@ -437,6 +432,7 @@ window.PatientScreen = function PatientScreen({frame, t, lang}) {
   const [contactForm, setContactForm] = React.useState({name:"", relationship_label:"", phone:"", email:"", notify_on_alert:true, notify_weekly_report:true});
   const [contactBusy, setContactBusy] = React.useState(false);
   const [showContactForm, setShowContactForm] = React.useState(false);
+  const [showNewPatient, setShowNewPatient] = React.useState(false);
 
   React.useEffect(() => {
     const onAnalysis = (e) => {
@@ -623,16 +619,14 @@ window.PatientScreen = function PatientScreen({frame, t, lang}) {
   const vitalDisplay = dxDisplay.vitals || {};
   function displayModeFromEeg(a) {
     const cls = String(a?.overall?.pred_class || "").toLowerCase().replace(/[_\s]+/g, "-");
-    if (["hemorrhagic", "hs", "2"].includes(cls)) return "HS";
     if (["ischemic", "is", "1"].includes(cls)) return "IS";
     if (["non-stroke", "nonstroke", "ns", "normal", "0"].includes(cls)) return "NS";
     const overall = a?.overall || {};
     const probs = {
       NS: Number(overall.p_nonstroke || 0),
       IS: Number(overall.p_ischemic || 0),
-      HS: Number(overall.p_hemorrhagic || 0),
     };
-    return Object.entries(probs).sort((x, y) => y[1] - x[1])[0]?.[0] || null;
+    return Number(probs.IS || 0) >= Number(probs.NS || 0) ? "IS" : "NS";
   }
   const vitalRows = [
     ["BP", vitalDisplay.blood_pressure],
@@ -650,6 +644,30 @@ window.PatientScreen = function PatientScreen({frame, t, lang}) {
         </div>
       )}
       <div className="panel" style={{padding:18}}>
+        <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14}}>
+          <div className="stat-lbl">{lang==="vi"?"Bệnh nhân":"Patient"}</div>
+          <button className="btn btn-sm btn-primary" onClick={() => setShowNewPatient(true)}>
+            <window.NTIcon name="plus" size={11}/>{lang==="vi"?"Bệnh nhân mới":"New patient"}
+          </button>
+        </div>
+        {dbPatients.length === 0 && !patientsState.loading && (
+          <div style={{padding:"20px 16px", textAlign:"center", border:"1px dashed var(--line-2)", borderRadius:8, background:"var(--bg-3)"}}>
+            <div style={{fontSize:13.5, fontWeight:600, marginBottom:6}}>{lang==="vi"?"Chưa có bệnh nhân nào":"No patients yet"}</div>
+            <div style={{fontSize:12, color:"var(--ink-3)", lineHeight:1.5, marginBottom:14}}>
+              {lang==="vi"
+                ? "Tạo hồ sơ bệnh nhân để gán phiên EEG, xem cảnh báo và gửi báo cáo. Hoặc phân tích 1 file EEG ở tab Nhập liệu — hệ thống sẽ tự tạo bệnh nhân."
+                : "Create a patient record to attach EEG sessions, view alerts, and send reports. Or analyse an EEG file in the Setup tab — a patient is created automatically."}
+            </div>
+            <div style={{display:"flex", gap:8, justifyContent:"center", flexWrap:"wrap"}}>
+              <button className="btn btn-sm btn-primary" onClick={() => setShowNewPatient(true)}>
+                <window.NTIcon name="plus" size={12}/>{lang==="vi"?"Tạo bệnh nhân":"Create patient"}
+              </button>
+              <button className="btn btn-sm" onClick={() => window.dispatchEvent(new CustomEvent("nt:nav", {detail:{tab:"setup"}}))}>
+                <window.NTIcon name="setup" size={12}/>{lang==="vi"?"Phân tích file EEG":"Analyse EEG file"}
+              </button>
+            </div>
+          </div>
+        )}
         {dbPatients.length > 0 && (
           <div style={{marginBottom:14}}>
             <div style={{fontSize:10, color:"var(--ink-3)", textTransform:"uppercase", letterSpacing:"0.08em", marginBottom:6}}>
@@ -664,6 +682,7 @@ window.PatientScreen = function PatientScreen({frame, t, lang}) {
             </select>
           </div>
         )}
+        {dbPatient && (<React.Fragment>
         <div style={{display:"flex", alignItems:"center", gap:14, marginBottom:18, paddingBottom:18, borderBottom:"1px solid var(--line)"}}>
           <div style={{
             width:60, height:60, borderRadius:"50%",
@@ -702,6 +721,7 @@ window.PatientScreen = function PatientScreen({frame, t, lang}) {
             </div>
           ))}
         </div>
+        </React.Fragment>)}
         {vitalRows.length > 0 && (
         <div style={{marginTop:18, paddingTop:18, borderTop:"1px solid var(--line)"}}>
           <div className="stat-lbl" style={{marginBottom:10}}>{lang==="vi"?"Sinh hiệu đã nhập":"Entered vitals"}</div>
@@ -745,7 +765,6 @@ window.PatientScreen = function PatientScreen({frame, t, lang}) {
               [lang==="vi"?"Model nghiêng về":"Model output", displayModeFromEeg(dxDisplay.eeg_analysis)],
               ["NS", dxDisplay.eeg_analysis.overall?.p_nonstroke != null ? `${(dxDisplay.eeg_analysis.overall.p_nonstroke * 100).toFixed(1)}%` : null],
               ["IS", dxDisplay.eeg_analysis.overall?.p_ischemic != null ? `${(dxDisplay.eeg_analysis.overall.p_ischemic * 100).toFixed(1)}%` : null],
-              ["HS", dxDisplay.eeg_analysis.overall?.p_hemorrhagic != null ? `${(dxDisplay.eeg_analysis.overall.p_hemorrhagic * 100).toFixed(1)}%` : null],
             ].filter(([,v]) => v != null && v !== "").map(([k, v]) => (
               <div key={k} style={{display:"grid", gridTemplateColumns:"120px 1fr", gap:10, padding:"5px 0", fontSize:12}}>
                 <span style={{color:"var(--ink-3)"}}>{k}</span>
@@ -845,7 +864,7 @@ window.PatientScreen = function PatientScreen({frame, t, lang}) {
             <div style={{color:"var(--ink-3)", fontSize:12}}>{lang==="vi"?"Không có cảnh báo trong 30 ngày qua":"No alerts in the last 30 days"}</div>
           )}
           {patAlerts && patAlerts.map((a, i) => {
-            const cls = a.alert_class === "hemorrhagic" ? "hs" : a.alert_class === "ischemic" ? "is" : "ns";
+            const cls = a.alert_class === "ischemic" ? "is" : "ns";
             const probs = Array.isArray(a.probabilities_smooth) ? a.probabilities_smooth : [];
             const maxProb = probs.length ? Math.max(...probs) : null;
             const dt = a.created_at ? new Date(a.created_at) : null;
@@ -856,7 +875,7 @@ window.PatientScreen = function PatientScreen({frame, t, lang}) {
                 <div className="mono" style={{fontSize:10.5, color:"var(--ink-3)", paddingTop:2}}>{timeLabel}</div>
                 <div style={{borderLeft:`2px solid var(--${cls})`, paddingLeft:14}}>
                   <div style={{fontSize:13, fontWeight:600, marginBottom:4, color:`var(--${cls})`}}>
-                    {a.alert_class === "hemorrhagic" ? "HS" : a.alert_class === "ischemic" ? "IS" : "NS"} alert
+                    {a.alert_class === "ischemic" ? "IS" : "NS"} alert
                     {maxProb != null && <span style={{fontWeight:400, color:"var(--ink-2)", marginLeft:8}}>p={maxProb.toFixed(2)}</span>}
                   </div>
                   <div style={{fontSize:11.5, color:"var(--ink-3)"}}>
@@ -932,6 +951,16 @@ window.PatientScreen = function PatientScreen({frame, t, lang}) {
           </div>
         </div>
       )}
+
+      {/* Create patient modal — same dialog the dashboard uses, so the Patient
+          tab is no longer a dead end when no patient exists yet. */}
+      {showNewPatient && (
+        <window.NewPatientDialog
+          lang={lang}
+          onClose={() => setShowNewPatient(false)}
+          onCreated={() => { setShowNewPatient(false); setPatRefresh(v => v + 1); }}
+        />
+      )}
     </div>
   );
 };
@@ -957,7 +986,6 @@ window.AlertsScreen = function AlertsScreen({t, lang}) {
   function classToMode(cls) {
     const c = String(cls || "").toLowerCase();
     if (c === "ischemic") return "IS";
-    if (c === "hemorrhagic") return "HS";
     if (c === "non-stroke" || c === "nonstroke") return "NS";
     return "NS";
   }
@@ -981,7 +1009,7 @@ window.AlertsScreen = function AlertsScreen({t, lang}) {
     }
   }
   const [search, setSearch] = React.useState("");
-  const [classFilter, setClassFilter] = React.useState("HSIS"); // HSIS | ALL | HS | IS | NS
+  const [classFilter, setClassFilter] = React.useState("IS"); // ALL | IS | NS
   const [alertNotice, setAlertNotice] = React.useState(null);
   const [busyAlertId, setBusyAlertId] = React.useState(null);
   const [assignSelections, setAssignSelections] = React.useState({});
@@ -1004,8 +1032,7 @@ window.AlertsScreen = function AlertsScreen({t, lang}) {
 
   const q = search.trim().toLowerCase();
   const alerts = allAlerts.filter(a => {
-    if (classFilter === "HSIS" && !["HS", "IS"].includes(a.mode)) return false;
-    if (classFilter !== "HSIS" && classFilter !== "ALL" && a.mode !== classFilter) return false;
+    if (classFilter !== "ALL" && a.mode !== classFilter) return false;
     if (q) {
       const hay = `${a.patient} ${a.bed} ${a.mode} ${a.status}`.toLowerCase();
       if (!hay.includes(q)) return false;
@@ -1081,9 +1108,7 @@ window.AlertsScreen = function AlertsScreen({t, lang}) {
         <input type="text" placeholder={lang==="vi"?"Tìm bệnh nhân, giường, lớp...":"Search patient, bed, class..."}
                value={search} onChange={e => setSearch(e.target.value)} style={{flex:1, maxWidth:340}}/>
         <select value={classFilter} onChange={e => setClassFilter(e.target.value)} className="btn btn-sm" style={{minWidth:110}}>
-          <option value="HSIS">HS + IS</option>
           <option value="ALL">{lang==="vi"?"Tất cả":"All"}</option>
-          <option value="HS">HS</option>
           <option value="IS">IS</option>
           <option value="NS">NS</option>
         </select>
@@ -1140,7 +1165,7 @@ window.AlertsScreen = function AlertsScreen({t, lang}) {
             </td></tr>
           )}
           {alerts.map((a) => {
-            const accent = a.mode==="NS"?"var(--ns)":a.mode==="IS"?"var(--is)":"var(--hs)";
+            const accent = a.mode==="NS"?"var(--ns)":"var(--is)";
             return (
               <tr key={a.id}>
                 <td className="mono" style={{color:"var(--ink-3)"}}>{a.time}</td>
@@ -1223,12 +1248,24 @@ window.DeviceScreen = function DeviceScreen({frame, t, lang, channels}) {
   const [probeResult, setProbeResult] = React.useState(null);
   const [deviceNotice, setDeviceNotice] = React.useState(null);
   const [pendingUnpair, setPendingUnpair] = React.useState(null);
+  const [showGuide, setShowGuide] = React.useState(false);
   const devicesState = window.NTApi
     ? window.NTApi.useApi(() => window.NTApi.get("/api/devices"), [refreshTick], 10000)
     : {data: null, loading: true, error: null};
   const presetsState = window.NTApi
     ? window.NTApi.useApi(() => window.NTApi.get("/api/devices/presets"), [])
     : {data: null, loading: true, error: null};
+  // Honest live-device readiness (the real BLE link), separate from a
+  // "registered preset" DB row. Without this the screen showed a green WiFi
+  // icon for a preset that has no real connection at all.
+  const liveStatusState = window.NTApi
+    ? window.NTApi.useApi(() => window.NTApi.get("/api/devices/live-status"), [refreshTick], 10000)
+    : {data: null, loading: true, error: null};
+  // Replay case count for the "REPLAY (ready)" source card.
+  const replayCasesState = window.NTApi
+    ? window.NTApi.useApi(() => window.NTApi.get("/api/replay/cases"), [])
+    : {data: null};
+  const replayCount = Array.isArray(replayCasesState.data) ? replayCasesState.data.length : null;
 
   async function pairPreset(presetKey, preset) {
     if (!window.NTApi || pairing) return;
@@ -1243,7 +1280,7 @@ window.DeviceScreen = function DeviceScreen({frame, t, lang, channels}) {
         fs: preset.fs || 256,
       });
       setRefreshTick(v => v + 1);
-      setDeviceNotice({type:"ok", text: lang==="vi" ? "Đã ghép thiết bị. Bước tiếp theo: gán bệnh nhân hoặc bắt đầu stream." : "Device paired. Next: assign a patient or start stream."});
+      setDeviceNotice({type:"ok", text: lang==="vi" ? "Đã đăng ký hồ sơ thiết bị (chưa phải link BLE thật). Bước tiếp theo: gán bệnh nhân hoặc mở Live (replay)." : "Device profile registered (not a real BLE link yet). Next: assign a patient or open Live (replay)."});
     } catch (e) {
       setDeviceNotice({type:"error", text:(lang==="vi"?"Lỗi ghép thiết bị: ":"Pair error: ") + (e.message || e)});
     } finally {
@@ -1299,84 +1336,95 @@ window.DeviceScreen = function DeviceScreen({frame, t, lang, channels}) {
   const connectedCoverage = connected
     ? Math.min(1, ((connected.channels || []).length || 0) / Math.max(1, channels.length))
     : 0;
-  const connectionState = connected
-    ? (Object.prototype.hasOwnProperty.call(connected, "is_active") && connected.is_active === false ? "registered" : "paired")
-    : "no-device";
+  // Real BLE link readiness — a registered preset is NOT a live connection.
+  const liveStatus = liveStatusState.data || null;
+  const liveReady = !!(liveStatus && liveStatus.ready);
+  const liveBlockReason = liveStatus && liveStatus.blocking_reason ? liveStatus.blocking_reason : null;
+  // "paired" falsely implied a live link. A registered device with no real BLE
+  // link is only a saved profile — label it as such so the card stops claiming
+  // a connection that does not exist.
+  const connectionState = liveReady
+    ? (lang==="vi" ? "đang kết nối" : "connected")
+    : connected
+    ? (lang==="vi" ? "đã đăng ký · chưa có link thật" : "registered · no live link")
+    : (lang==="vi" ? "chưa có thiết bị" : "no device");
   return (
-    <div className="nt-device-layout" style={{padding:18, height:"calc(100vh - 54px)", overflowY:"auto"}}>
-      <div style={{display:"flex", flexDirection:"column", gap:14}}>
+    <div style={{padding:18, height:"calc(100vh - 54px)", overflowY:"auto"}}>
+      <div style={{display:"flex", flexDirection:"column", gap:14, maxWidth:760, margin:"0 auto"}}>
+        {deviceNotice && (
+          <div style={{padding:"9px 11px", borderRadius:7, border:"1px solid var(--line-2)", background:"var(--bg-3)", color:deviceNotice.type==="error"?"var(--hs)":deviceNotice.type==="warn"?"var(--is)":"var(--ns)", fontSize:12}}>
+            {deviceNotice.text}
+          </div>
+        )}
+        {/* ── NGUỒN DỮ LIỆU — two explicit modes ─────────────────── */}
         <div className="panel" style={{padding:18}}>
-          <div className="stat-lbl" style={{marginBottom:14}}>{lang==="vi"?"Trạng thái thiết bị":"Device state"}</div>
-          {deviceNotice && (
-            <div style={{marginBottom:12, padding:"9px 10px", borderRadius:7, border:"1px solid var(--line-2)", background:"var(--bg-3)", color:deviceNotice.type==="error"?"var(--hs)":deviceNotice.type==="warn"?"var(--is)":"var(--ns)", fontSize:12}}>
-              {deviceNotice.text}
-            </div>
-          )}
-          <div style={{display:"flex", alignItems:"center", gap:14, padding:"14px 14px", background:"var(--bg-3)", borderRadius:8, border:"1px solid var(--line-2)"}}>
-            <div style={{width:50, height:50, borderRadius:8, background:"var(--bg-2)", border:"1px solid var(--line-2)", display:"grid", placeItems:"center", color:"var(--brand-2)"}}>
-              <window.NTIcon name="device" size={22}/>
-            </div>
-            <div style={{flex:1}}>
-              <div style={{fontSize:14, fontWeight:600}}>{connectedName}</div>
-              <div className="mono" style={{fontSize:11, color:"var(--ink-3)", marginTop:2}}>SN: {connectedSerial}</div>
-              <div style={{display:"flex", gap:10, marginTop:8, fontSize:11, color:"var(--ink-3)", alignItems:"center"}}>
-                <span style={{display:"flex", alignItems:"center", gap:4}}><window.NTIcon name="wifi" size={11} color={connected?"var(--ns)":"var(--ink-4)"}/>{connected ? "WiFi" : "No link"}</span>
-                <span style={{display:"flex", alignItems:"center", gap:4}}><window.NTIcon name="battery" size={11} color={connected && frame.device?.battery != null ? "var(--ns)" : "var(--ink-4)"}/>{connected && frame.device?.battery != null ? `${frame.device.battery}%` : "Not measured"}</span>
-                <span><span className={`dot live ${connected ? "ns" : ""}`}/> {connectionState}</span>
+          <div className="stat-lbl" style={{marginBottom:14}}>{lang==="vi"?"Nguồn dữ liệu":"Data source"}</div>
+
+          {/* Mode 1: Replay — always available */}
+          <div style={{display:"flex", alignItems:"flex-start", gap:12, padding:14, borderRadius:10, border:"1px solid var(--ns)", background:"oklch(0.24 0.08 150 / 0.16)", marginBottom:12}}>
+            <span className="dot live ns" style={{marginTop:6}}/>
+            <div style={{flex:1, minWidth:0}}>
+              <div style={{display:"flex", alignItems:"center", gap:8, flexWrap:"wrap"}}>
+                <span style={{fontSize:14, fontWeight:600}}>{lang==="vi"?"Replay":"Replay"}</span>
+                <span className="tag ns" style={{fontSize:9.5}}>{lang==="vi"?"Sẵn sàng":"Ready"}</span>
+                <span style={{fontSize:10.5, color:"var(--ink-3)"}}>{lang==="vi"?"đang dùng":"in use"}</span>
               </div>
-            </div>
-          </div>
-          <div style={{display:"grid", gridTemplateColumns:"repeat(4, 1fr)", gap:6, marginTop:12}}>
-            {[
-              ["1", lang==="vi"?"Probe":"Probe", probeResult && !probeResult.error],
-              ["2", lang==="vi"?"Pair":"Pair", !!connected],
-              ["3", lang==="vi"?"Gán BN":"Assign", false],
-              ["4", lang==="vi"?"Stream":"Stream", !!connected && frame.rawBuffer],
-            ].map(([n, label, done]) => (
-              <div key={n} style={{padding:"8px 6px", borderRadius:6, border:"1px solid var(--line-2)", background:done?"oklch(0.24 0.08 150 / 0.35)":"var(--bg-3)", color:done?"var(--ns)":"var(--ink-3)", fontSize:10.5, textAlign:"center"}}>
-                <span className="mono">{n}</span> {label}
+              <div style={{fontSize:12, color:"var(--ink-3)", marginTop:3}}>
+                {lang==="vi"?"Phát lại EEG đã ghi sẵn":"Replay of pre-recorded EEG"}{replayCount!=null?` · ${replayCount} ${lang==="vi"?"ca":"cases"}`:""}
               </div>
-            ))}
-          </div>
-          <div style={{marginTop:12, padding:"10px 12px", background:"var(--bg-3)", borderRadius:8, border:"1px solid var(--line-2)"}}>
-            <div style={{display:"flex", justifyContent:"space-between", fontSize:10.5, color:"var(--ink-3)", marginBottom:6}}>
-              <span>Pipeline coverage</span>
-              <span className="mono">{Math.round(connectedCoverage * 100)}%</span>
-            </div>
-            <div style={{height:6, background:"var(--bg-2)", borderRadius:3, overflow:"hidden"}}>
-              <div style={{height:"100%", width:`${connectedCoverage * 100}%`, background:connectedCoverage >= 0.75 ? "var(--ns)" : connectedCoverage >= 0.25 ? "var(--is)" : "var(--hs)"}}/>
+              <button className="btn btn-sm btn-primary" style={{marginTop:10}} onClick={() => window.dispatchEvent(new CustomEvent("nt:nav", {detail:{tab:"live", source:"replay"}}))}>
+                <window.NTIcon name="live" size={12}/>{lang==="vi"?"Bắt đầu replay":"Start replay"}
+              </button>
             </div>
           </div>
-          <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:12, marginTop:18, fontSize:12}}>
-            {[
-              [t.live.channels, connectedChannelCount || "Not measured"],
-              ["Sample rate", connectedFs ? connectedFs + " Hz" : "Not measured"],
-              ["Driver", connected ? "registered preset" : "Not measured"],
-              ["Latency", "Not measured"],
-              ["CMRR", "Not measured"],
-              ["Impedance", "Not measured"],
-            ].map(([k, v], i) => (
-              <div key={i}>
-                <div style={{fontSize:10, color:"var(--ink-3)", textTransform:"uppercase", letterSpacing:"0.08em", marginBottom:4}}>{k}</div>
-                <div className="mono" style={{color:"var(--ink)"}}>{v}</div>
+
+          {/* Mode 2: Live device — only "ready" once configured */}
+          <div style={{display:"flex", alignItems:"flex-start", gap:12, padding:14, borderRadius:10, border:"1px solid " + (liveReady?"var(--ns)":"var(--line-2)"), background: liveReady?"oklch(0.24 0.08 150 / 0.16)":"var(--bg-3)"}}>
+            <span className={`dot live ${liveReady?"ns":""}`} style={{marginTop:6}}/>
+            <div style={{flex:1, minWidth:0}}>
+              <div style={{display:"flex", alignItems:"center", gap:8, flexWrap:"wrap"}}>
+                <span style={{fontSize:14, fontWeight:600}}>{lang==="vi"?"Thiết bị thật (BLE Focus+)":"Live device (BLE Focus+)"}</span>
+                <span className="tag" style={{fontSize:9.5, color:liveReady?"var(--ns)":"var(--ink-3)", borderColor:liveReady?"var(--ns)":"var(--ink-4)"}}>
+                  {liveReady?(lang==="vi"?"Sẵn sàng":"Ready"):(lang==="vi"?"Chưa sẵn":"Not available")}
+                </span>
               </div>
-            ))}
-          </div>
-          <div style={{display:"flex", gap:8, flexWrap:"wrap", marginTop:16}}>
-            <button className="btn btn-sm" disabled={!connected} onClick={() => window.dispatchEvent(new CustomEvent("nt:nav", {detail:{tab:"patient"}}))}>
-              <window.NTIcon name="patient" size={12}/>{lang==="vi"?"Gán bệnh nhân":"Assign patient"}
-            </button>
-            <button className="btn btn-sm btn-primary" disabled={!connected} onClick={() => window.dispatchEvent(new CustomEvent("nt:nav", {detail:{tab:"live"}}))}>
-              <window.NTIcon name="live" size={12}/>{lang==="vi"?"Mở live stream":"Open live stream"}
-            </button>
+              <div style={{fontSize:12, color:"var(--ink-3)", marginTop:3}}>
+                {liveReady
+                  ? (lang==="vi"?"Đã kết nối · sẵn sàng stream":"Connected · ready to stream")
+                  : (lang==="vi"?"Chưa kết nối · ":"Not connected · ") + (liveBlockReason || (lang==="vi"?"giao thức BLE chưa cấu hình":"BLE protocol not configured"))}
+              </div>
+              {liveReady ? (
+                <button className="btn btn-sm btn-primary" style={{marginTop:10}} onClick={() => window.dispatchEvent(new CustomEvent("nt:nav", {detail:{tab:"live", source:"device"}}))}>
+                  <window.NTIcon name="live" size={12}/>{lang==="vi"?"Mở Live (thiết bị)":"Open Live (device)"}
+                </button>
+              ) : (
+                <button className="btn btn-sm" style={{marginTop:10}} onClick={() => setShowGuide(v=>!v)}>
+                  <window.NTIcon name="bt" size={12}/>{showGuide?(lang==="vi"?"Ẩn hướng dẫn":"Hide guide"):(lang==="vi"?"Xem hướng dẫn kết nối":"Connection guide")}
+                </button>
+              )}
+              {showGuide && !liveReady && (
+                <div style={{marginTop:12, padding:"12px 14px", background:"var(--bg-2)", borderRadius:8, border:"1px solid var(--line-2)", fontSize:12, color:"var(--ink-2)", lineHeight:1.6}}>
+                  <div style={{fontWeight:600, marginBottom:6, color:"var(--ink)"}}>{lang==="vi"?"Để stream từ Focus+ thật:":"To stream from the real Focus+:"}</div>
+                  <ol style={{margin:0, paddingLeft:18, display:"grid", gap:4}}>
+                    <li>{lang==="vi"?"Bật thiết bị, chạy ":"Power on the device, run "}<code>scripts/ble_probe.py</code>{lang==="vi"?" để dò giao thức BLE.":" to discover the BLE protocol."}</li>
+                    <li>{lang==="vi"?"Điền UUID/format + lệnh start vào ":"Fill UUIDs/format + start command into "}<code>device_source.py</code>{lang==="vi"?", đặt ":", set "}<code>configured=True</code>.</li>
+                    <li>{lang==="vi"?"Tải lại app — thẻ này sẽ chuyển sang \"Sẵn sàng\".":"Reload the app — this card flips to \"Ready\"."}</li>
+                  </ol>
+                  <div style={{marginTop:8, color:"var(--ink-3)"}}>{lang==="vi"?"Lưu ý: Focus+ chỉ 2 kênh → chỉ chạy SQI/No-Decision, không phân loại.":"Note: Focus+ has only 2 channels → drives SQI/No-Decision, not classification."}</div>
+                </div>
+              )}
+            </div>
           </div>
         </div>
         <div className="panel" style={{padding:18}}>
           <div className="stat-lbl" style={{marginBottom:14, display:"flex", justifyContent:"space-between"}}>
-            <span>{lang==="vi"?"Thiết bị khả dụng":"Available devices"}</span>
+            <span>{lang==="vi"?"Hồ sơ thiết bị đã đăng ký":"Registered device profiles"}</span>
             <span className="mono" style={{fontSize:9, color:devicesState.data?"var(--ns)":"var(--ink-3)", letterSpacing:"0.08em"}}>
               {devicesState.data ? "BACKEND" : devicesState.loading ? "LOADING" : "FALLBACK"}
             </span>
+          </div>
+          <div style={{fontSize:11.5, color:"var(--ink-3)", lineHeight:1.5, marginBottom:10}}>
+            {lang==="vi"?"Đăng ký = lưu hồ sơ montage của thiết bị (không phải kết nối BLE thật).":"Register = save a device montage profile (not a real BLE connection)."}
           </div>
           {(() => {
             const registeredKeys = new Set(dbDevices.map(d => d.device_type));
@@ -1425,7 +1473,7 @@ window.DeviceScreen = function DeviceScreen({frame, t, lang, channels}) {
                     </button>
                     <button className="btn btn-sm" style={{fontSize:11}} disabled={pairing===d.presetKey || !d.ch}
                             onClick={() => pairPreset(d.presetKey, d.preset)}>
-                      {pairing===d.presetKey ? "..." : (lang==="vi"?"Ghép":"Pair")}
+                      {pairing===d.presetKey ? "..." : (lang==="vi"?"Đăng ký":"Register")}
                     </button>
                   </React.Fragment>
                 )}
@@ -1459,22 +1507,6 @@ window.DeviceScreen = function DeviceScreen({frame, t, lang, channels}) {
             )}
           </div>
         )}
-      </div>
-      <div className="panel" style={{padding:18}}>
-        <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14}}>
-          <div className="stat-lbl">{lang==="vi"?"Sẵn sàng tín hiệu":"Signal readiness"}</div>
-          <div style={{display:"flex", gap:14, fontSize:11, fontFamily:"var(--font-mono)"}}>
-            <span style={{color:"var(--ink-3)"}}>impedance: Not measured</span>
-          </div>
-        </div>
-        <div style={{display:"grid", placeItems:"center", minHeight:220, padding:"10px 0", color:"var(--ink-3)", fontSize:12, textAlign:"center", lineHeight:1.5}}>
-          {lang==="vi"
-            ? "Chưa có dữ liệu impedance/raw EEG từ thiết bị. Bản đồ kênh sẽ hiện sau khi driver gửi dữ liệu thật."
-            : "No device impedance/raw EEG has been measured yet. The channel map appears after the driver sends real data."}
-        </div>
-        <div style={{marginTop:14, padding:14, background:"var(--bg-3)", borderRadius:8, border:"1px solid var(--line-2)", fontSize:12, color:"var(--ink-2)", lineHeight:1.55}}>
-          <strong style={{color:"var(--ink)"}}>{lang==="vi"?"Ghi chú:":"Note:"}</strong> {lang==="vi"?"Bản đồ này là placeholder cho montage. Impedance thật cần đọc từ device/driver trước khi dùng như dữ liệu chất lượng tín hiệu.":"This map is a montage placeholder. Real impedance must come from the device/driver before it is shown as signal-quality evidence."}
-        </div>
       </div>
     </div>
   );

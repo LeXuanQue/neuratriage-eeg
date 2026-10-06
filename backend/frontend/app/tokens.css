@@ -251,6 +251,14 @@ input::placeholder{color:var(--ink-4)}
 .sev-bg-ns{background:var(--ns-soft);border-left:3px solid var(--ns)}
 .sev-bg-is{background:var(--is-soft);border-left:3px solid var(--is)}
 .sev-bg-hs{background:var(--hs-soft);border-left:3px solid var(--hs)}
+/* No-Decision: deliberately NOT green and NOT the IS amber. Hatched neutral with a
+   dashed rule reads as "unknown", so an abstention is never mistaken for "normal". */
+.sev-bg-nd{
+  background:
+    repeating-linear-gradient(135deg, transparent 0 9px, color-mix(in oklab, var(--ink-3) 9%, transparent) 9px 11px),
+    var(--bg-2);
+  border-left:3px dashed var(--ink-2);
+}
 
 /* Responsive app layouts */
 .nt-kpi-grid{

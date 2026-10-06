@@ -101,10 +101,12 @@ def dashboard_summary(
         if latest_alert and latest_alert.probabilities_smooth:
             try:
                 ps = list(latest_alert.probabilities_smooth)
-                names = ["NS", "IS", "HS"]
-                idx = max(range(len(ps)), key=lambda i: ps[i])
+                names = ["NS", "IS"]
+                binary_ps = ps[:2]
+                idx = max(range(len(binary_ps)), key=lambda i: binary_ps[i])
                 dominant = names[idx] if idx < len(names) else None
-                prob = float(ps[idx])
+                total = float(sum(binary_ps)) or 1.0
+                prob = float(binary_ps[idx]) / total
             except (TypeError, ValueError):
                 pass
 

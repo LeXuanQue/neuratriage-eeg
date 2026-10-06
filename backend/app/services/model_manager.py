@@ -33,6 +33,50 @@ class ModelManager:
         self._lock = threading.Lock()
         self._model: Optional[pipeline.TrainedStrokeModel] = None
         self._model_path: Optional[str] = None
+        self._window_model: Optional[object] = None
+        self._window_model_path: Optional[str] = None
+
+    def peek_window_model_metadata(self, path: str | Path) -> Optional[dict]:
+        """Read-only: the riemann model's metadata for display, or None if absent.
+
+        Uses the cached instance when it is the active one; otherwise loads a
+        throwaway copy so asking for info never changes which model is active.
+        """
+        path_str = str(Path(path))
+        if self._window_model is not None and self._window_model_path == path_str:
+            return dict(getattr(self._window_model, "metadata", {}) or {})
+        if not Path(path_str).is_file():
+            return None
+        from riemann_model import RiemannStrokeModel
+
+        return dict(RiemannStrokeModel.load(path_str).metadata or {})
+
+    def get_window_model(self, kind: str, path: str | Path) -> Optional[object]:
+        """Window-level scorer for the real-time detector, or None for the feature model.
+
+        kind = REALTIME_MODEL setting. A missing riemann model raises instead of
+        silently falling back, so the UI never shows one model's output as another's.
+        """
+        kind = kind.strip().lower()
+        if kind == "features":
+            return None
+        if kind != "riemann":
+            raise ValueError(f"Unknown realtime_model {kind!r}; use 'features' or 'riemann'.")
+        path_str = str(Path(path))
+        with self._lock:
+            if self._window_model is not None and self._window_model_path == path_str:
+                return self._window_model
+            if not Path(path_str).is_file():
+                raise RuntimeError(
+                    f"realtime_model='riemann' but no riemann model at {path_str}; "
+                    "run scripts/train_riemann_model.py or set REALTIME_MODEL=features."
+                )
+            from riemann_model import RiemannStrokeModel
+
+            self._window_model = RiemannStrokeModel.load(path_str)
+            self._window_model_path = path_str
+            logger.info("Loaded riemann window model from %s (sha256=%s)", path_str, _sha256_file(Path(path_str)))
+            return self._window_model
 
     @classmethod
     def get(cls) -> "ModelManager":
@@ -55,7 +99,7 @@ class ModelManager:
             from ..envelope import EnvelopeError
 
             raise EnvelopeError(
-                "Model not loaded. Call /api/inference/load-model first.",
+                "Model not loaded. Call /api/reload-model or start the app with a valid model path.",
                 "MODEL_NOT_LOADED",
                 503,
             )

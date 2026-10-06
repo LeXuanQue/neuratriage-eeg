@@ -31,6 +31,15 @@ class ContactIn(BaseModel):
     notify_weekly_report: bool = True
 
 
+class ContactUpdate(BaseModel):
+    name: Optional[str] = None
+    relationship_label: Optional[str] = None
+    phone: Optional[str] = None
+    email: Optional[str] = None
+    notify_on_alert: Optional[bool] = None
+    notify_weekly_report: Optional[bool] = None
+
+
 class PatientIn(BaseModel):
     full_name: str = Field(..., min_length=1, max_length=160)
     date_of_birth: Optional[datetime] = None
@@ -206,6 +215,30 @@ def add_contact(
     db.commit()
     db.refresh(contact)
     return ok(_contact_to_out(contact), status_code=201)
+
+
+@router.put("/{patient_id}/contacts/{contact_id}")
+def update_contact(
+    patient_id: str,
+    contact_id: str,
+    body: ContactUpdate = Body(...),
+    db: Session = Depends(get_db),
+    _: DemoUser = Depends(get_current_user),
+):
+    contact = db.execute(
+        select(EmergencyContact).where(
+            EmergencyContact.id == contact_id,
+            EmergencyContact.patient_id == patient_id,
+        )
+    ).scalar_one_or_none()
+    if not contact:
+        raise EnvelopeError("Contact not found", "CONTACT_NOT_FOUND", 404)
+    diff = body.model_dump(exclude_unset=True)
+    for field, value in diff.items():
+        setattr(contact, field, value)
+    db.commit()
+    db.refresh(contact)
+    return ok(_contact_to_out(contact))
 
 
 @router.delete("/{patient_id}/contacts/{contact_id}")

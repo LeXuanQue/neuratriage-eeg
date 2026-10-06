@@ -22,7 +22,7 @@ from ..database import get_db
 from ..deps import get_current_user
 from ..envelope import EnvelopeError, ok
 from ..models import WeeklyReport
-from ..services.report_service import generate_and_save
+from ..services.report_service import REPORTS_DIR, generate_and_save
 
 logger = logging.getLogger("neuratriage.reports")
 router = APIRouter(prefix="/api/reports", tags=["reports"])
@@ -113,11 +113,19 @@ def download_pdf(
     ).scalar_one_or_none()
     if not report:
         raise EnvelopeError(f"Report {report_id} not found", "NOT_FOUND", 404)
-    if not report.pdf_path or not Path(report.pdf_path).is_file():
+    if not report.pdf_path:
+        raise EnvelopeError("PDF file not found on disk", "PDF_NOT_FOUND", 404)
+    # pdf_path is a DB string; confine it to REPORTS_DIR so a tampered row can
+    # never make this endpoint serve an arbitrary file off disk.
+    pdf = Path(report.pdf_path).resolve()
+    try:
+        pdf.relative_to(REPORTS_DIR.resolve())
+    except ValueError:
+        raise EnvelopeError("PDF path outside reports directory", "PDF_PATH_INVALID", 403)
+    if not pdf.is_file():
         raise EnvelopeError("PDF file not found on disk", "PDF_NOT_FOUND", 404)
 
     safe_name = (report.patient_name or "report").replace(" ", "_")
-    filename = f"neuratriage_{report.week_label.replace(' · ', '_')}_{safe_name}.pdf"
     safe_week = (report.week_label or "week").replace(" ", "_").replace("/", "-")
     filename = f"neuratriage_{safe_week}_{safe_name}.pdf"
-    return FileResponse(path=report.pdf_path, media_type="application/pdf", filename=filename)
+    return FileResponse(path=str(pdf), media_type="application/pdf", filename=filename)

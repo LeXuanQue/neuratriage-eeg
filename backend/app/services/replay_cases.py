@@ -7,7 +7,7 @@ from typing import Optional
 from ..config import REPO_ROOT, UPLOAD_DIR
 
 
-REPLAY_DIRS = ("dataset_real", "dataset_ischemic", "dataset_healthy", "dataset_hemorrhagic", "dataset_npz")
+REPLAY_DIRS = ("dataset_real", "dataset_ischemic", "dataset_healthy", "dataset_npz")
 ALLOWED_INFER_EXTS = {".npz", ".npy"}
 
 
@@ -32,8 +32,6 @@ def _label_for(path: Path, source: str) -> str:
         return f"{stem} - ischemic replay"
     if source == "dataset_healthy":
         return f"{stem} - healthy replay"
-    if source == "dataset_hemorrhagic":
-        return f"{stem} - hemorrhagic exploratory replay"
     return f"{stem} - demo replay"
 
 
@@ -56,8 +54,6 @@ def list_replay_cases(limit_per_dir: int = 12) -> list[dict]:
                         if source in ("dataset_real", "dataset_ischemic")
                         else "non-stroke"
                         if source == "dataset_healthy"
-                        else "hemorrhagic"
-                        if source == "dataset_hemorrhagic"
                         else "demo"
                     ),
                     "size_bytes": path.stat().st_size,
@@ -66,16 +62,40 @@ def list_replay_cases(limit_per_dir: int = 12) -> list[dict]:
     return cases
 
 
+def _extra_replay_dir() -> Optional[Path]:
+    """Opt-in EXTRA_REPLAY_DIR (setting), or None when unset / missing."""
+    from ..config import get_settings
+
+    raw = (get_settings().extra_replay_dir or "").strip()
+    if not raw:
+        return None
+    folder = Path(raw)
+    return folder if folder.is_dir() else None
+
+
 def resolve_replay_case(case_id: str) -> Optional[Path]:
     file_id = _safe_file_id(case_id)
     if not file_id or Path(file_id).suffix.lower() != ".npz":
         return None
-    for source in REPLAY_DIRS:
-        folder = REPO_ROOT / source
+    folders = [REPO_ROOT / source for source in REPLAY_DIRS]
+    extra = _extra_replay_dir()
+    if extra is not None:
+        folders.append(extra)
+    for folder in folders:
         path = (folder / file_id).resolve()
         if path.is_file() and _inside(path, folder):
             return path
     return None
+
+
+def resolve_stream_file(file_id: str) -> Optional[Path]:
+    """Resolve a streamable EEG file: a curated dataset case OR a user upload.
+
+    The WS replay path used to look only at the dataset directories, so a file
+    the operator uploaded could be analysed offline but never watched as a live
+    waveform. Both lookups stay inside their allow-listed root.
+    """
+    return resolve_replay_case(file_id) or resolve_uploaded_file(file_id)
 
 
 def resolve_uploaded_file(upload_id: str) -> Optional[Path]:

@@ -13,8 +13,8 @@ Output:
   dataset_healthy/manifest_healthy.csv  (label = non-stroke)
 
 Usage:
-  .venv/Scripts/python.exe download_physionet_healthy.py
-  .venv/Scripts/python.exe download_physionet_healthy.py --subjects 20
+  .venv/Scripts/python.exe scripts/download_physionet_healthy.py
+  .venv/Scripts/python.exe scripts/download_physionet_healthy.py --subjects 20
 """
 import argparse
 import time
@@ -23,7 +23,7 @@ from pathlib import Path
 
 warnings.filterwarnings("ignore")
 
-ROOT = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parent.parent
 OUT_DIR = ROOT / "dataset_healthy"
 MNE_DATA_DIR = ROOT / "mne_data"   # pre-set so MNE never prompts interactively
 TARGET_FS = 256.0

@@ -86,6 +86,26 @@ def test_patient_lifecycle_crud_with_contact(
     r = client.get(f"/api/patients/{pid}/contacts", headers=auth_headers)
     assert any(c["id"] == contact_id for c in r.json()["data"])
 
+    # PUT updates only the supplied fields; others are preserved.
+    r = client.put(
+        f"/api/patients/{pid}/contacts/{contact_id}",
+        json={"phone": "0900000000", "notify_weekly_report": False},
+        headers=auth_headers,
+    )
+    assert r.status_code == 200
+    updated = r.json()["data"]
+    assert updated["phone"] == "0900000000"
+    assert updated["notify_weekly_report"] is False
+    assert updated["name"] == "Jane Doe"
+
+    r = client.put(
+        f"/api/patients/{pid}/contacts/does-not-exist",
+        json={"phone": "x"},
+        headers=auth_headers,
+    )
+    assert r.status_code == 404
+    assert r.json()["error"]["code"] == "CONTACT_NOT_FOUND"
+
     r = client.delete(
         f"/api/patients/{pid}/contacts/{contact_id}", headers=auth_headers
     )

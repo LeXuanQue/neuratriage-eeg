@@ -20,54 +20,33 @@ def test_research_metrics_endpoint_uses_real_result_files() -> None:
         r = client.get("/api/research/metrics", headers=headers)
     assert r.status_code == 200
     data = r.json()["data"]
+    assert data["available"] is True
+    assert data["task"] == "binary"
     assert "conditions" in data
+    assert "paired_comparisons" in data
+    assert "dataset" in data
     assert "limitations" in data
-    assert "exploratory_datasets" in data
-    assert "exploratory_results" in data
-    assert "qc" in data
-    assert any("clinical" in item.lower() for item in data["limitations"])
+    assert "exploratory_datasets" not in data
+    assert "exploratory_results" not in data
+    assert "qc" not in data
+    limitations = " ".join(data["limitations"]).lower()
+    assert "binary" in limitations
+    assert "confound" in limitations
+    assert "clinical performance" in limitations
 
 
-def test_research_metrics_reports_exploratory_hemorrhagic_dataset() -> None:
+def test_research_metrics_dataset_is_binary_ns_is() -> None:
     with TestClient(app) as client:
         headers = _auth_headers(client)
         r = client.get("/api/research/metrics", headers=headers)
     assert r.status_code == 200
-    hs = r.json()["data"]["exploratory_datasets"]["hemorrhagic"]
-    assert "available" in hs
-    if hs["available"]:
-        assert hs["n_patients"] >= 4
-        assert hs["label_counts"].get("2", 0) >= 1
-        assert hs["validated_for_3class_cv"] is False
-
-
-def test_research_metrics_reports_3class_exploratory_result() -> None:
-    with TestClient(app) as client:
-        headers = _auth_headers(client)
-        r = client.get("/api/research/metrics", headers=headers)
-    assert r.status_code == 200
-    three_class = r.json()["data"]["exploratory_results"]["three_class"]
-    assert "available" in three_class
-    if three_class["available"]:
-        assert three_class["task"] == "multiclass"
-        assert three_class["folds"] == 4
-        assert three_class["fast"] is False
-        assert three_class["claim_status"] == "exploratory_positive_trend"
-        assert len(three_class["conditions"]) >= 2
-
-
-def test_research_metrics_reports_hemorrhagic_qc() -> None:
-    with TestClient(app) as client:
-        headers = _auth_headers(client)
-        r = client.get("/api/research/metrics", headers=headers)
-    assert r.status_code == 200
-    qc = r.json()["data"]["qc"]["hemorrhagic"]
-    assert "available" in qc
-    if qc["available"]:
-        assert qc["n_patients"] >= 4
-        assert qc["total_retained_windows"] >= 88
-        assert isinstance(qc["rows"], list)
-        assert qc["rows"]
+    dataset = r.json()["data"]["dataset"]
+    class_names = dataset.get("class_names", {})
+    patient_counts = dataset.get("patient_label_counts", {})
+    assert class_names.get("0") == "non-stroke"
+    assert class_names.get("1") == "ischemic"
+    assert "2" not in class_names
+    assert set(patient_counts).issubset({"0", "1"})
 
 
 def test_replay_cases_are_allow_listed_file_ids() -> None:
@@ -79,4 +58,7 @@ def test_replay_cases_are_allow_listed_file_ids() -> None:
     assert isinstance(cases, list)
     assert cases
     assert all("/" not in c["id"] and "\\" not in c["id"] for c in cases)
-    assert any(c.get("class_hint") == "hemorrhagic" for c in cases)
+    assert {c.get("class_hint") for c in cases}.issubset(
+        {"ischemic", "non-stroke", "demo"}
+    )
+    assert not any(c.get("class_hint") == "hemorrhagic" for c in cases)

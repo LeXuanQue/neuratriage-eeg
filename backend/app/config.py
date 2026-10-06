@@ -51,6 +51,15 @@ class Settings(BaseSettings):
 
     model_path: str = "backend/models/model.joblib"
     auto_load_model_on_startup: bool = True
+    # Real-time scorer: "features" = entropy/MFDFA + LightGBM (model_path);
+    # "riemann" = covariance tangent-space model (riemann_model_path), the most
+    # device-transferable model in the leave-source-out study. SQI gating, EMA and
+    # hysteresis are shared by both.
+    realtime_model: str = "features"
+    riemann_model_path: str = "backend/models/riemann_model.joblib"
+    # Opt-in folder OUTSIDE the repo with extra replay cases (e.g. F:/eeg_extra/npz/oslo
+    # for the "unseen device -> false alert" demo). Empty = only the repo datasets.
+    extra_replay_dir: str = ""
 
     # SendGrid
     sendgrid_api_key: str = ""

@@ -73,6 +73,7 @@ window.useNotifications = function useNotifications(frame) {
 // === Sidebar ===
 window.NTSidebar = function NTSidebar({active, onChange, t, lang, sessionInfo, onSignOut, onOpenCmdK, connection}) {
   const items = [
+    {id:"demo", icon:"play"},
     {id:"live", icon:"live"},
     {id:"dashboard", icon:"dashboard"},
     {id:"patient", icon:"patient"},
@@ -191,7 +192,7 @@ window.NTSidebar = function NTSidebar({active, onChange, t, lang, sessionInfo, o
 // === Notifications popover ===
 function NotificationsPopover({open, onClose, notifs, lang}) {
   if (!open) return null;
-  const kindColor = { hs:"var(--hs)", is:"var(--is)", ns:"var(--ns)", info:"var(--brand-2)" };
+  const kindColor = { is:"var(--is)", ns:"var(--ns)", info:"var(--brand-2)" };
   return (
     <>
       <div onClick={onClose} style={{position:"fixed", inset:0, zIndex:80}}/>
@@ -215,7 +216,7 @@ function NotificationsPopover({open, onClose, notifs, lang}) {
             }}
             onMouseEnter={e => e.currentTarget.style.background = "var(--bg-2)"}
             onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
-              <div style={{width:6, height:6, borderRadius:"50%", background:kindColor[n.kind], marginTop:6, flex:"none", boxShadow:`0 0 6px ${kindColor[n.kind]}`}}/>
+              <div style={{width:6, height:6, borderRadius:"50%", background:kindColor[n.kind] || kindColor.info, marginTop:6, flex:"none", boxShadow:`0 0 6px ${kindColor[n.kind] || kindColor.info}`}}/>
               <div style={{flex:1, minWidth:0}}>
                 <div style={{fontSize:12, fontWeight:500, color:"var(--ink)"}}>{n.title}</div>
                 <div style={{fontSize:11, color:"var(--ink-3)", marginTop:2}}>{n.body}</div>
@@ -403,6 +404,7 @@ window.CommandPalette = function CommandPalette({open, onClose, onNav, lang, the
 
   const commands = useShellM(() => {
     const navs = [
+      {id:"demo", label:lang==="vi"?"Chế độ demo":"Demo mode", group:lang==="vi"?"Điều hướng":"Navigate", icon:"play", action:() => onNav("demo")},
       {id:"live", label:lang==="vi"?"Live Monitor":"Live Monitor", group:lang==="vi"?"Điều hướng":"Navigate", icon:"live", action:() => onNav("live")},
       {id:"dashboard", label:"Dashboard", group:lang==="vi"?"Điều hướng":"Navigate", icon:"dashboard", action:() => onNav("dashboard")},
       {id:"patient", label:lang==="vi"?"Bệnh nhân":"Patient", group:lang==="vi"?"Điều hướng":"Navigate", icon:"patient", action:() => onNav("patient")},

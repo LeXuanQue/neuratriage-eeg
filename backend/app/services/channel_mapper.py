@@ -21,9 +21,14 @@ from eeg_stroke_pipeline import (
 
 DEVICE_PRESETS: Dict[str, Dict[str, object]] = {
     "brain_life_focus_plus": {
-        "channels": ["AF3", "AF4", "T7", "T8"],
+        # The device streams 2 monopolar EEG channels, AF3 and AF4 (frontal-polar),
+        # recovered from the vendor app (headers 0x24/0x26). AF3/AF4 are not in
+        # DEFAULT_CHANNELS, so map_to_pipeline honestly NaN-fills rather than
+        # aliasing them onto other electrodes — the live 2-ch path drives SQI /
+        # No-Decision only, classification stays on the 18-ch replay path.
+        "channels": ["AF3", "AF4"],
         "fs": 256,
-        "description": "Brain-Life Focus+ (4 EEG channels, PPG, fNIRS)",
+        "description": "Brain-Life Focus+ (2 EEG channels AF3, AF4; protocol confirmed via vendor app)",
     },
     "full_18ch": {
         "channels": list(DEFAULT_CHANNELS),

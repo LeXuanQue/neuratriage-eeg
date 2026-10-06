@@ -1,7 +1,7 @@
 // Live data adapter: polls the local backend when available. Without backend
 // model output it returns a neutral waiting frame, not simulated evidence.
 (function () {
-  const CLASS_KEYS = ["NS", "IS", "HS"];
+  const CLASS_KEYS = ["NS", "IS"];
   const API_KEY = "neuratriage_api_base";
   const DEFAULT_API_BASE = "http://127.0.0.1:8501";
 
@@ -24,8 +24,8 @@
   }
 
   function normalizeMode(mode) {
-    const next = String(mode || "HS").toUpperCase();
-    return CLASS_KEYS.includes(next) ? next : "HS";
+    const next = String(mode || "IS").toUpperCase();
+    return CLASS_KEYS.includes(next) ? next : "IS";
   }
 
   function normalizeProbs(probs) {
@@ -49,15 +49,14 @@
   function neutralHistory() {
     return Array.from({ length: 80 }, (_, i) => ({
       t: i - 79,
-      NS: 1 / 3,
-      IS: 1 / 3,
-      HS: 1 / 3,
+      NS: 0.5,
+      IS: 0.5,
     }));
   }
 
   function fallbackFrame(mode) {
     const scenario = normalizeMode(mode);
-    const probs = normalizeProbs({ NS: 1, IS: 1, HS: 1 });
+    const probs = normalizeProbs({ NS: 1, IS: 1 });
     return {
       source: "waiting",
       connection: "waiting",
@@ -88,7 +87,7 @@
     payload = unwrapPayload(payload);
     const mode = normalizeMode(payload.mode || payload.scenario || requestedMode);
     const hasProbPayload = !!(payload.probabilities || payload.probs);
-    const probs = hasProbPayload ? normalizeProbs(payload.probabilities || payload.probs) : normalizeProbs({ NS: 1, IS: 1, HS: 1 });
+    const probs = hasProbPayload ? normalizeProbs(payload.probabilities || payload.probs) : normalizeProbs({ NS: 1, IS: 1 });
     const dominant = payload.dominant || (hasProbPayload ? dominantClass(probs) : "NS");
     const hasModelEvent = payload.hasModelEvent === true || payload.has_model_event === true;
     return {

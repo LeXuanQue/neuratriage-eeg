@@ -71,11 +71,10 @@ demo mode, but login, CRUD, upload, inference, and reports need the backend.
 
 ## Demo Wording Boundary
 
-The active frontend should describe results as EEG risk-pattern triage support.
+The active frontend should describe results as EEG ischemic-risk triage support.
 Do not present the app as a diagnosis system or CT/MRI replacement. Current
-validated evidence is binary NS/IS. Four UCLH ICH patients are integrated as
-exploratory HS evidence, but HS is not yet validated for the planned 5-fold
-3-class CV.
+evidence scope is binary NS/IS. Hemorrhagic output is not a primary UI claim and
+should stay in future-work/exploratory wording only.
 
 ## Known P1 Items
 
