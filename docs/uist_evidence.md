@@ -9,9 +9,9 @@ clinical assessment.
 ## Current Validated Task
 
 - Task: binary ischemic-vs-non-stroke research classification.
-- Ischemic cohort: `dataset_real/`, 50 patients.
+- Ischemic cohort: `dataset_ischemic/`, 50 patients.
 - Non-stroke cohort: `dataset_healthy/`, 50 PhysioNet resting-baseline subjects.
-- Combined feature table: `dataset_real/feature_table_combined.csv`.
+- Combined feature table: `dataset_ischemic/feature_table_combined.csv`.
 - Main result files:
   - `results/mfdfa_ablation_results.json`
   - `results/mfdfa_ablation_summary.txt`
@@ -25,7 +25,7 @@ clinical assessment.
 - Feature table: `dataset_hemorrhagic/feature_table_hemorrhagic.csv`.
 - Retained windows: 88 from 4 patients.
 - Exploratory 3-class table:
-  `dataset_real/feature_table_combined_3class_exploratory.csv`.
+  `dataset_ischemic/feature_table_combined_3class_exploratory.csv`.
 
 This confirms the missing class is present in the newly added dataset. Four HS
 patients are enough for a 4-fold exploratory check, but still short of the

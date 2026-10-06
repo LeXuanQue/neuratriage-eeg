@@ -43,7 +43,7 @@ SENDGRID_FROM_NAME=NeuraTriage EEG
 - The demo model (`backend/models/model.joblib`) is baked into the image.
   Auto-loaded on startup; SHA-256 logged for integrity.
 - `results/*.json` is baked in so the **Insights** screen has research metrics.
-- `dataset_hemorrhagic/` (4 small NPZ) is baked in, so HS replay works out of the box.
+- `dataset_hemorrhagic/` is not required for the primary binary NS/IS demo.
 - The **large** replay sets (`dataset_ischemic`, `dataset_healthy`, `dataset_npz`)
   are `.dockerignore`d to keep the image small. To enable IS/NS replay:
   - **docker-compose:** already mounted read-only (see `docker-compose.yml`), or
@@ -76,8 +76,9 @@ curl -s -X POST https://your-domain/api/auth/login \
   -d '{"email":"doctor@neuratriage.com","password":"demo1234"}'
 ```
 
-Then open `https://your-domain/` -> log in -> **Insights** should show metrics, and
-**Setup -> Replay** should list ischemic + healthy + hemorrhagic cases.
+Then open `https://your-domain/` -> log in -> **Insights** should show metrics.
+**Setup -> Replay** should list ischemic and healthy replay cases when those
+large datasets are baked into the image or mounted on the host.
 
 ## 5. Still-open hardening (not blocking a demo)
 
@@ -85,4 +86,5 @@ Then open `https://your-domain/` -> log in -> **Insights** should show metrics, 
   before any non-demo use.
 - Frontend uses in-browser Babel + CDN React (dev builds). A build step (esbuild/Vite)
   would let the CSP drop `unsafe-eval`/`unsafe-inline` and cut load time.
-- Emergency-contact editing is add/delete only (no PUT endpoint).
+- Live BLE streaming is intentionally disabled until the real device UUIDs,
+  framing, scaling, and channel mapping are confirmed with `scripts/ble_probe.py`.

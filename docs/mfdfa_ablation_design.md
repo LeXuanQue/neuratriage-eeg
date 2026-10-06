@@ -73,7 +73,7 @@ results/mfdfa_ablation_summary.txt
 
 ## Current Local Result
 
-Fast 5-fold patient-wise run on `dataset_real/feature_table_combined.csv`
+Fast 5-fold patient-wise run on `dataset_ischemic/feature_table_combined.csv`
 without Optuna:
 
 ```text

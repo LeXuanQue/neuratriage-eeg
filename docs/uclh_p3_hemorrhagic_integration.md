@@ -62,7 +62,7 @@ Feature extraction result:
 - Windows retained: 88
 - Label: class `2`
 - Exploratory 3-class combined table:
-  `dataset_real/feature_table_combined_3class_exploratory.csv`
+  `dataset_ischemic/feature_table_combined_3class_exploratory.csv`
 
 ## Research Interpretation
 
