@@ -1,0 +1,15 @@
+services:
+  backend:
+    build: .
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./data:/app/data
+      - ./out:/app/out
+      # Replay datasets (read-only). dataset_real was renamed to dataset_ischemic.
+      - ./dataset_ischemic:/app/dataset_ischemic:ro
+      - ./dataset_healthy:/app/dataset_healthy:ro
+      - ./dataset_npz:/app/dataset_npz:ro
+    env_file:
+      - .env
+    restart: unless-stopped

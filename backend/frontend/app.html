@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>NeuraTriage EEG · Command Center</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Fraunces:opsz,wght@9..144,300;9..144,400;9..144,500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="app/tokens.css"/>
+</head>
+<body>
+<div id="root"></div>
+<div id="js-error" style="display:none;position:fixed;inset:0;background:#1a0000;color:#ff6b6b;font-family:monospace;font-size:13px;padding:24px;z-index:99999;white-space:pre-wrap;overflow:auto"></div>
+<script>
+window.onerror = function(msg, src, line, col, err) {
+  var d = document.getElementById('js-error');
+  d.style.display = 'block';
+  d.textContent = '❌ JS Error:\n' + msg + '\n\nFile: ' + src + ':' + line + '\n\n' + (err && err.stack ? err.stack : '');
+};
+window.addEventListener('unhandledrejection', function(e) {
+  var d = document.getElementById('js-error');
+  d.style.display = 'block';
+  d.textContent += '\n\n❌ Unhandled Promise:\n' + (e.reason && e.reason.stack ? e.reason.stack : String(e.reason));
+});
+</script>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+<script src="shared/i18n.js"></script>
+<script src="shared/live-data.js"></script>
+<script src="shared/ws-stream.js"></script>
+<script src="shared/api.js"></script>
+
+<script type="text/babel" src="app/icons.jsx"></script>
+<script type="text/babel" src="app/visualizations.jsx"></script>
+<script type="text/babel" src="app/shell.jsx"></script>
+<script type="text/babel" src="app/screen-live.jsx"></script>
+<script type="text/babel" src="app/screens-clinical.jsx"></script>
+<script type="text/babel" src="app/screens-tools.jsx"></script>
+<script type="text/babel" src="app/screen-demo.jsx"></script>
+<script type="text/babel" src="app/tweaks-panel.jsx"></script>
+
+<script type="text/babel">
+const { useState, useEffect, useRef } = React;
+
+// ── Login Screen ──────────────────────────────────────────────────────────
+function LoginScreen({ onLogin }) {
+  const [email, setEmail] = useState("doctor@neuratriage.com");
+  const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    setError(null);
+    setLoading(true);
+    try {
+      const data = await window.NTApi.login(email, password);
+      onLogin(data.user);
+    } catch (err) {
+      setError(err.message || "Login failed");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div style={{minHeight:"100vh", display:"flex", alignItems:"center", justifyContent:"center",
+                 background:"var(--bg)", fontFamily:"var(--font-sans)"}}>
+      <div style={{width:380, padding:40, background:"var(--bg-2)", borderRadius:16,
+                   border:"1px solid var(--line-2)", boxShadow:"0 8px 40px rgba(0,0,0,0.18)"}}>
+        <div style={{textAlign:"center", marginBottom:32}}>
+          <div style={{fontSize:28, fontWeight:700, color:"var(--ink)", letterSpacing:"-0.5px",
+                       fontFamily:"var(--font-serif)"}}>NeuraTriage</div>
+          <div style={{fontSize:12, color:"var(--ink-3)", marginTop:4, letterSpacing:"0.06em",
+                       textTransform:"uppercase"}}>EEG Triage Support</div>
+        </div>
+        <form onSubmit={handleSubmit}>
+          <div style={{marginBottom:14}}>
+            <div style={{fontSize:11, color:"var(--ink-3)", textTransform:"uppercase",
+                         letterSpacing:"0.06em", marginBottom:6}}>Email</div>
+            <input type="email" value={email} onChange={e => setEmail(e.target.value)}
+                   required autoFocus style={{width:"100%", boxSizing:"border-box"}}
+                   placeholder="doctor@neuratriage.com"/>
+          </div>
+          <div style={{marginBottom:24}}>
+            <div style={{fontSize:11, color:"var(--ink-3)", textTransform:"uppercase",
+                         letterSpacing:"0.06em", marginBottom:6}}>Password</div>
+            <input type="password" value={password} onChange={e => setPassword(e.target.value)}
+                   required style={{width:"100%", boxSizing:"border-box"}} placeholder="••••••••"/>
+          </div>
+          {error && (
+            <div style={{marginBottom:16, padding:"10px 14px", background:"var(--bg-3)",
+                         borderLeft:"3px solid var(--hs)", borderRadius:6, fontSize:12, color:"var(--hs)"}}>
+              {error}
+            </div>
+          )}
+          <button type="submit" className="btn btn-primary"
+                  style={{width:"100%", padding:"11px 0", fontSize:13.5}} disabled={loading}>
+            {loading ? "Signing in…" : "Sign in"}
+          </button>
+        </form>
+        <div style={{marginTop:20, padding:"12px 16px", background:"var(--bg-3)", borderRadius:8,
+                     fontSize:11.5, color:"var(--ink-3)", lineHeight:1.7}}>
+          <div style={{fontWeight:600, color:"var(--ink-2)", marginBottom:4}}>Demo accounts</div>
+          <div className="mono">admin@neuratriage.com · demo1234</div>
+          <div className="mono">doctor@neuratriage.com · demo1234</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const TWEAKS = /*EDITMODE-BEGIN*/{
+  "scenario": "IS",
+  "lang": "vi",
+  "animated": true,
+  "channelCount": 18,
+  "accent": "cyan",
+  "streamMode": "ws",
+  "replayNpz": ""
+}/*EDITMODE-END*/;
+
+function App() {
+  const [active, setActive] = useState("live");
+  const [deviceStream, setDeviceStream] = useState(false);
+  const [tw, setTweak] = window.useTweaks
+    ? window.useTweaks(TWEAKS)
+    : [TWEAKS, () => {}];
+
+  const [theme, setTheme] = window.useTheme ? window.useTheme() : ["auto", () => {}];
+  const [cmdkOpen, setCmdkOpen] = useState(false);
+
+  const [apiBase, setApiBase] = useState(() => window.LiveData?.getApiBase() || "");
+  const [replayCases, setReplayCases] = useState([]);
+  const [demoScenarios, setDemoScenarios] = useState([]);
+  const [demoState, setDemoState] = useState({loading: true, error: null});
+  const [demoScenario, setDemoScenario] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("neuratriage_demo_scenario") || "null"); } catch(e){ return null; }
+  });
+  const [demoRunId, setDemoRunId] = useState(0);
+  // Loop the recording so a display screen never runs dry. Scenarios can ask
+  // for it; the operator can override it from the live banner.
+  const [loopOverride, setLoopOverride] = useState(null);
+  const demoRef = useRef(null);
+  const [selectedPatientId, setSelectedPatientId] = useState(() => {
+    try { return localStorage.getItem("neuratriage_selected_patient_id") || ""; } catch(e){ return ""; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem("neuratriage_api_base", apiBase); } catch(e){}
+    window.API_BASE_URL = apiBase;
+  }, [apiBase]);
+  useEffect(() => {
+    let alive = true;
+    async function loadCases() {
+      if (!window.NTApi?.getToken?.()) return;
+      try {
+        const rows = await window.NTApi.get("/api/replay/cases");
+        if (alive && Array.isArray(rows)) setReplayCases(rows);
+      } catch (e) {
+        if (alive) setReplayCases([]);
+      }
+    }
+    loadCases();
+    return () => { alive = false; };
+  }, [apiBase]);
+  useEffect(() => {
+    let alive = true;
+    async function loadDemoScenarios() {
+      if (!window.NTApi?.getToken?.()) return;
+      setDemoState({loading: true, error: null});
+      try {
+        const rows = await window.NTApi.get("/api/demo/scenarios");
+        if (!alive) return;
+        setDemoScenarios(Array.isArray(rows) ? rows : []);
+        setDemoState({loading: false, error: null});
+      } catch (e) {
+        if (!alive) return;
+        setDemoScenarios([]);
+        setDemoState({loading: false, error: e});
+      }
+    }
+    loadDemoScenarios();
+    return () => { alive = false; };
+  }, [apiBase]);
+  useEffect(() => {
+    let alive = true;
+    async function loadDefaultPatient() {
+      if (selectedPatientId || !window.NTApi?.getToken?.()) return;
+      try {
+        const rows = await window.NTApi.get("/api/patients?limit=1");
+        const first = Array.isArray(rows) ? rows[0] : rows?.items?.[0];
+        if (alive && first?.id) {
+          setSelectedPatientId(first.id);
+          try { localStorage.setItem("neuratriage_selected_patient_id", first.id); } catch(e){}
+        }
+      } catch (e) {}
+    }
+    loadDefaultPatient();
+    return () => { alive = false; };
+  }, [apiBase, selectedPatientId]);
+  useEffect(() => {
+    const onPatient = (e) => {
+      const id = e.detail && e.detail.patientId;
+      if (typeof id === "string") setSelectedPatientId(id);
+    };
+    window.addEventListener("nt:patient-select", onPatient);
+    return () => window.removeEventListener("nt:patient-select", onPatient);
+  }, []);
+
+  // Global keyboard shortcuts
+  useEffect(() => {
+    const handler = (e) => {
+      const meta = e.metaKey || e.ctrlKey;
+      if (meta && e.key.toLowerCase() === "k") { e.preventDefault(); setCmdkOpen(v => !v); }
+      else if (meta && e.key === ",") { e.preventDefault(); setActive("settings"); }
+      else if (!meta && !e.altKey && !e.shiftKey && /^[1-9]$/.test(e.key) && document.activeElement?.tagName !== "INPUT" && document.activeElement?.tagName !== "TEXTAREA") {
+        const map = ["demo","live","dashboard","patient","alerts","device","setup","insights","reports","settings"];
+        const i = parseInt(e.key, 10) - 1;
+        if (map[i]) { e.preventDefault(); setActive(map[i]); }
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, []);
+
+  // Cross-screen navigation: any child can call
+  //   window.dispatchEvent(new CustomEvent("nt:nav", {detail:{tab:"patient"}}))
+  // to switch screens without prop drilling setActive everywhere.
+  useEffect(() => {
+    const onNav = (e) => {
+      const tab = e.detail && e.detail.tab;
+      const source = e.detail && e.detail.source;
+      // "device" → stream the live headband over WS; "replay" → dataset replay.
+      if (source === "device") { setDeviceStream(true); setTweak("streamMode", "ws"); }
+      else if (source === "replay") {
+        setDeviceStream(false);
+        // Without a selected case the live screen would wait forever, so fall
+        // back to the first demo scenario.
+        const api = demoRef.current;
+        if (api && !api.activeId && !api.replayNpz && api.scenarios.length) api.start(api.scenarios[0]);
+      }
+      if (typeof tab === "string") setActive(tab);
+    };
+    window.addEventListener("nt:nav", onNav);
+    return () => window.removeEventListener("nt:nav", onNav);
+  }, []);
+
+  const lang = window.I18N && window.I18N[tw.lang] ? tw.lang : "vi";
+  const t = (window.I18N && window.I18N[lang]) || window.I18N.vi;
+  // React rules-of-hooks: always call both hooks, then pick the active frame.
+  // Each hook is cheap when its mode is inactive (the inactive one still
+  // opens a connection — the toggle is for "what to display", not "what to
+  // run"). We bias toward WS mode if the bundle is loaded.
+  // Must be computed BEFORE useWSStream below: this is compiled by Babel, so a
+  // `const` declared further down would read as undefined here rather than throw.
+  const loopReplay = loopOverride == null
+    ? !!(demoScenario && demoScenario.loop)
+    : !!loopOverride;
+  const pollFrame = window.useLiveData(tw.scenario);
+  const channels = window.pickChannels(tw.channelCount);
+  const wsFrame = window.useWSStream
+    ? window.useWSStream(tw.scenario, deviceStream ? null : tw.replayNpz, selectedPatientId, channels, deviceStream, demoRunId, !!(demoScenario && demoScenario.artifact), loopReplay)
+    : pollFrame;
+  const frame = (deviceStream || tw.streamMode === "ws") && window.useWSStream ? wsFrame : pollFrame;
+  const animated = tw.animated !== false;
+
+  // Demo mode: a scenario only decides *which stored recording* to replay and
+  // whether to inject an artifact. Everything shown afterwards still comes from
+  // the backend detector over the same WebSocket a real device would use.
+  function startDemo(scenario) {
+    if (!scenario) return;
+    setDemoScenario(scenario);
+    try { localStorage.setItem("neuratriage_demo_scenario", JSON.stringify(scenario)); } catch(e){}
+    setDeviceStream(false);
+    setTweak({streamMode: "ws", replayNpz: scenario.replay_case});
+    setLoopOverride(null);          // each run starts from the scenario default
+    setDemoRunId(v => v + 1);
+    setActive("live");
+  }
+
+  function toggleLoop() {
+    setLoopOverride(v => !(v == null ? !!(demoScenario && demoScenario.loop) : v));
+  }
+
+  function stopDemo() {
+    setDemoScenario(null);
+    try { localStorage.removeItem("neuratriage_demo_scenario"); } catch(e){}
+    setTweak("replayNpz", "");
+    setDemoRunId(v => v + 1);
+  }
+
+  // The scenario's artifact setting is handed to useWSStream and armed on the
+  // socket's own open handler, so it survives the reconnect a new run causes.
+  const demoApi = {
+    scenarios: demoScenarios,
+    loading: demoState.loading,
+    error: demoState.error,
+    scenario: demoScenario,
+    activeId: demoScenario ? demoScenario.id : null,
+    replayNpz: tw.replayNpz || "",
+    start: startDemo,
+    stop: stopDemo,
+    rerun: () => startDemo(demoScenario),
+    loop: loopReplay,
+    toggleLoop,
+  };
+  demoRef.current = demoApi;
+
+  // Track session start time when WS connects to backend
+  const sessionStartRef = useRef(null);
+  const [sessionTick, setSessionTick] = useState(0);
+  useEffect(() => {
+    if (frame.connection === "backend") {
+      if (!sessionStartRef.current) sessionStartRef.current = Date.now();
+    } else {
+      sessionStartRef.current = null;
+    }
+  }, [frame.connection]);
+  useEffect(() => {
+    if (frame.connection !== "backend") return;
+    const id = setInterval(() => setSessionTick(v => v + 1), 1000);
+    return () => clearInterval(id);
+  }, [frame.connection]);
+  const sessionDuration = (() => {
+    if (!sessionStartRef.current) return "—";
+    const secs = Math.floor((Date.now() - sessionStartRef.current) / 1000);
+    const h = Math.floor(secs / 3600), m = Math.floor((secs % 3600) / 60), s = secs % 60;
+    return `${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}`;
+  })();
+
+  const hasMeasuredRaw = !!(frame.rawBuffer && frame.rawBuffer.length);
+  const hasModelEvent = hasMeasuredRaw && frame.hasModelEvent === true;
+  const sessionInfo = {
+    patient: hasMeasuredRaw ? frame.patient : {name: lang === "vi" ? "Chưa có EEG" : "No EEG", initials: "--", mrn: "--"},
+    device: hasMeasuredRaw ? frame.device : {...frame.device, name: lang === "vi" ? "Chưa có nguồn đo" : "No source"},
+    duration: sessionDuration,
+    connection: hasMeasuredRaw ? frame.connection : "waiting",
+  };
+
+  // A browser that pairs a fresh app.html with a cached older i18n.js used to
+  // die here on the first missing key. Detect that instead of throwing.
+  const i18nStale = !t.demo || !t.deviceLink || !t.modelInfo || !t.nd;
+  const titles = {
+    demo: t.demo?.title || "Demo",
+    live: t.live.title,
+    dashboard: t.nav.dashboard,
+    patient: t.nav.patient,
+    alerts: t.nav.alerts,
+    device: t.nav.device,
+    setup: t.nav.setup,
+    insights: t.nav.insights,
+    reports: t.nav.reports,
+    settings: t.nav.settings,
+  };
+
+  const subtitles = {
+    demo: t.demo?.subtitle || "",
+    live: hasMeasuredRaw
+      ? `EEG ${frame.rawSource || "raw"} · ${frame.device?.sample_rate || 256} Hz`
+      : (lang==="vi"?"Chưa có nguồn EEG đo được hoặc replay":"No measured/replay EEG source"),
+    dashboard: lang==="vi"?"Tổng quan tất cả giường đang theo dõi":"Overview of all monitored beds",
+    patient: lang==="vi"?"Hồ sơ + dữ liệu đã nhập + EEG":"Profile + entered data + EEG",
+    alerts: lang==="vi"?"Tất cả cảnh báo trong 24h gần nhất":"All alerts in last 24h",
+    device: lang==="vi"?"Kết nối, ghép thiết bị, kiểm tra trở kháng":"Connect, pair devices, impedance check",
+    setup: lang==="vi"?"Phân tích file EEG đã ghi sẵn":"Analyze pre-recorded EEG file",
+    insights: lang==="vi"?"Đặc trưng, confusion matrix, multifractal":"Features, confusion matrix, multifractal",
+    reports: lang==="vi"?"Báo cáo tuần tự động qua SendGrid":"Weekly auto-reports via SendGrid",
+    settings: lang==="vi"?"Cấu hình hệ thống và backend":"System and backend configuration",
+  };
+
+  const dom = frame.dominant;
+  const sourceLabel = hasMeasuredRaw ? (tw.replayNpz ? "REPLAY" : (frame.rawSource || "RAW").toUpperCase()) : "NO EEG";
+  // The SQI gate can block a decision while model events keep arriving. Showing
+  // a class + probability there would claim something the detector refused to
+  // conclude, so the badge has to say "no decision" instead.
+  const decisionGated = hasModelEvent && frame.status === "no-decision";
+  const liveBadge = active === "live"
+    ? [
+        decisionGated
+          ? {kind:"neutral", live:false, icon:false, label:t.live.noDecision.toUpperCase()}
+          : hasModelEvent
+          ? {kind:dom.toLowerCase(), live:true, icon:true, label:`${t.severityShort[dom]} · ${(frame.probs[dom]*100).toFixed(0)}%`}
+          : {kind:"neutral", live:false, icon:false, label:hasMeasuredRaw ? (lang==="vi"?"CHỜ MODEL":"WAIT MODEL") : (lang==="vi"?"CHỜ EEG":"WAIT EEG")},
+        {kind:"neutral", live:false, icon:false, label:sourceLabel},
+      ]
+    : [];
+
+  const notifs = window.useNotifications(frame);
+  const onLangToggle = () => setTweak("lang", lang === "vi" ? "en" : "vi");
+  const onSignOut = () => { window.NTApi?.clearToken?.(); window.location.href = "landing.html"; };
+
+  const screen = (() => {
+    const props = {frame, t, lang, channels, animated};
+    switch(active) {
+      case "demo": return <window.DemoScreen {...props} demo={demoApi}/>;
+      case "live": return <window.LiveMonitor {...props} accent={tw.accent} demo={demoApi}/>;
+      case "dashboard": return <window.DashboardScreen {...props}/>;
+      case "patient": return <window.PatientScreen {...props}/>;
+      case "alerts": return <window.AlertsScreen {...props}/>;
+      case "device": return <window.DeviceScreen {...props}/>;
+      case "setup": return <window.SetupScreen {...props}/>;
+      case "insights": return <window.InsightsScreen {...props}/>;
+      case "reports": return <window.ReportsScreen {...props}/>;
+      case "settings": return <window.SettingsScreen {...props} apiBase={apiBase} onApiBaseChange={setApiBase}/>;
+      default: return null;
+    }
+  })();
+
+  return (
+    <div style={{display:"flex", height:"100vh", overflow:"hidden", position:"relative", zIndex:1}}>
+      <window.NTSidebar
+        active={active}
+        onChange={setActive}
+        t={t} lang={lang}
+        sessionInfo={sessionInfo}
+        connection={frame.connection}
+        onSignOut={onSignOut}
+        onOpenCmdK={() => setCmdkOpen(true)}/>
+      <main style={{flex:1, display:"flex", flexDirection:"column", minWidth:0, overflow:"hidden"}}>
+        <window.NTTopbar
+          title={titles[active]}
+          subtitle={subtitles[active]}
+          badges={liveBadge}
+          mode={demoScenario ? "DEMO" : frame.connection==="backend" ? "BACKEND" : "WAITING"}
+          theme={theme} setTheme={setTheme}
+          lang={lang} onLangToggle={onLangToggle}
+          onSignOut={onSignOut}
+          notifs={notifs}
+          onOpenCmdK={() => setCmdkOpen(true)}/>
+        <div style={{flex:1, minHeight:0, overflow:"hidden"}}>
+          {screen}
+        </div>
+      </main>
+
+      {i18nStale && (
+        <div role="alert" style={{
+          position:"fixed", inset:0, zIndex:9999, background:"var(--bg)",
+          display:"grid", placeItems:"center", padding:24,
+        }}>
+          <div style={{maxWidth:520, textAlign:"center"}}>
+            <div style={{fontSize:19, fontWeight:600, marginBottom:10}}>
+              Trình duyệt đang dùng tệp giao diện cũ
+            </div>
+            <p style={{fontSize:13, color:"var(--ink-2)", lineHeight:1.6, margin:"0 0 16px"}}>
+              Bản <code className="mono">shared/i18n.js</code> trong cache không khớp với
+              <code className="mono"> app.html</code> hiện tại, nên thiếu chuỗi hiển thị.
+              Tải lại trang là xong.
+            </p>
+            <button className="btn btn-primary" onClick={() => window.location.reload()}>
+              Tải lại trang
+            </button>
+            <div className="mono" style={{fontSize:10.5, color:"var(--ink-4)", marginTop:12}}>
+              Ctrl+Shift+R
+            </div>
+          </div>
+        </div>
+      )}
+
+      <window.CommandPalette
+        open={cmdkOpen}
+        onClose={() => setCmdkOpen(false)}
+        onNav={setActive}
+        lang={lang}
+        theme={theme} setTheme={setTheme}
+        onLangToggle={onLangToggle}/>
+
+      {window.TweaksPanel && (
+        <window.TweaksPanel title="Tweaks" defaultOpen={false}>
+          <window.TweakSection title={lang==="vi"?"Kịch bản":"Scenario"}>
+            <window.TweakRadio label={lang==="vi"?"Tín hiệu":"Signal"} value={tw.scenario}
+              options={[{value:"NS", label:"NS"},{value:"IS", label:"IS"}]}
+              onChange={v => setTweak("scenario", v)}/>
+            <window.TweakRadio label={lang==="vi"?"Nguồn dữ liệu":"Data source"} value={tw.streamMode || "polling"}
+              options={[{value:"polling", label:lang==="vi"?"Sim · poll":"Sim · poll"},{value:"ws", label:lang==="vi"?"Backend · WS":"Backend · WS"}]}
+              onChange={v => setTweak("streamMode", v)}/>
+            <window.TweakRadio label={lang==="vi"?"Replay từ dataset":"Replay from dataset"} value={tw.replayNpz || ""}
+              options={[
+                {value:"", label:lang==="vi"?"Tắt (synthetic)":"Off (synthetic)"},
+                ...(replayCases.length ? replayCases.slice(0, 8).map(c => ({value:c.id, label:c.label})) : [
+                  {value:"sub-01.npz", label:"sub-01 · ischemic"},
+                  {value:"sub-05.npz", label:"sub-05 · ischemic"},
+                  {value:"sub-S001.npz", label:"S001 · healthy"},
+                  {value:"sub-S005.npz", label:"S005 · healthy"},
+                ]),
+              ]}
+              onChange={v => setTweak("replayNpz", v)}/>
+            <window.TweakToggle label={lang==="vi"?"Hoạt hoá waveform":"Animate waveform"} value={tw.animated} onChange={v => setTweak("animated", v)}/>
+          </window.TweakSection>
+          <window.TweakSection title={lang==="vi"?"Hiển thị":"Display"}>
+            <window.TweakRadio label={lang==="vi"?"Ngôn ngữ":"Language"} value={tw.lang}
+              options={[{value:"vi", label:"Tiếng Việt"},{value:"en", label:"English"}]}
+              onChange={v => setTweak("lang", v)}/>
+            <window.TweakSlider label={lang==="vi"?"Số kênh":"Channel count"} value={tw.channelCount} min={4} max={19} step={1} onChange={v => setTweak("channelCount", v)}/>
+          </window.TweakSection>
+        </window.TweaksPanel>
+      )}
+    </div>
+  );
+}
+
+function AuthGate() {
+  const [authed, setAuthed] = useState(() => !!(window.NTApi?.getToken?.()));
+  if (!authed) return <LoginScreen onLogin={() => setAuthed(true)} />;
+  return <App />;
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<AuthGate/>);
+</script>
+
+</body>
+</html>

@@ -83,6 +83,7 @@ import joblib
 import numpy as np
 import pandas as pd
 from scipy import optimize, signal, stats
+from scipy.spatial.distance import cdist as _scipy_cdist
 from scipy.special import softmax
 from sklearn.metrics import (
     f1_score,
@@ -222,6 +223,7 @@ class PipelineConfig:
     artifact_clip_mad_factor: float = 9.0
     bandpass_low: float = 1.0
     bandpass_high: float = 35.0
+    bandpass_order: int = 4  # Butterworth order; 4 is what the deployed model was trained with
     notch_freq: Optional[float] = 50.0
     notch_q: float = 30.0
     rereference: str = "car"  # common average reference
@@ -340,8 +342,15 @@ class OnlineEEGPreprocessor:
         self.config = config
         self.sos = _build_filter_sos(fs, config, include_bandpass=True)
         self.zi = [signal.sosfilt_zi(self.sos) * 0.0 for _ in range(n_channels)]
+        # Separate notch-only path for SQI. Training computes SQI on
+        # preprocess_eeg_for_sqi() output (notch only, keeps the 35-70 Hz band,
+        # no CAR). Computing online SQI on the band-passed + CAR feature signal
+        # drifts the SQI features away from the trained distribution, so we keep
+        # a parallel causal notch-only filter dedicated to SQI.
+        self.sos_sqi = _build_filter_sos(fs, config, include_bandpass=False)
+        self.zi_sqi = [signal.sosfilt_zi(self.sos_sqi) * 0.0 for _ in range(n_channels)]
 
-    def transform(self, chunk: np.ndarray) -> np.ndarray:
+    def _prepare(self, chunk: np.ndarray) -> np.ndarray:
         chunk = np.asarray(chunk, dtype=float)
         if chunk.shape[0] != self.n_channels:
             raise ValueError("Chunk channel count mismatch.")
@@ -349,13 +358,28 @@ class OnlineEEGPreprocessor:
             chunk = fill_nan_channels(chunk)
         if self.config.clip_artifacts:
             chunk = clip_channel_outliers(chunk, self.config.artifact_clip_mad_factor)
+        return chunk
+
+    def transform(self, chunk: np.ndarray) -> np.ndarray:
+        """Feature-domain signal: notch + bandpass (+ optional CAR)."""
+        return self.transform_with_sqi(chunk)[0]
+
+    def transform_with_sqi(self, chunk: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+        """Return (feature_signal, sqi_signal).
+
+        feature_signal = notch + bandpass (+CAR) for entropy/MFDFA.
+        sqi_signal     = notch only, no CAR — matches preprocess_eeg_for_sqi so
+                         online SQI features align with training.
+        """
+        chunk = self._prepare(chunk)
         out = np.empty_like(chunk)
+        sqi = np.empty_like(chunk)
         for ch in range(self.n_channels):
-            filtered, self.zi[ch] = signal.sosfilt(self.sos, chunk[ch], zi=self.zi[ch])
-            out[ch] = filtered
+            out[ch], self.zi[ch] = signal.sosfilt(self.sos, chunk[ch], zi=self.zi[ch])
+            sqi[ch], self.zi_sqi[ch] = signal.sosfilt(self.sos_sqi, chunk[ch], zi=self.zi_sqi[ch])
         if self.config.rereference.lower() == "car":
             out = out - out.mean(axis=0, keepdims=True)
-        return out
+        return out, sqi
 
 
 class RealTimeStrokeDetector:
@@ -366,7 +390,12 @@ class RealTimeStrokeDetector:
         trained_model: TrainedStrokeModel,
         config: Optional[PipelineConfig] = None,
         preprocess_online: bool = True,
+        window_model: Optional[Any] = None,
     ) -> None:
+        # window_model: anything with predict_proba_from_window(window) -> probs (e.g.
+        # riemann_model.RiemannStrokeModel). When set it scores the 4 s buffer directly
+        # and the entropy/MFDFA features are skipped; SQI gating is unchanged.
+        self.window_model = window_model
         self.model = trained_model
         self.config = config or PipelineConfig(**trained_model.config)
         self.fs = self.config.fs
@@ -375,6 +404,7 @@ class RealTimeStrokeDetector:
         self.mfdfa_len = int(round(self.config.mfdfa_window_sec * self.fs))
         self.step_len = int(round(self.config.entropy_step_sec * self.fs))
         self.buffer = np.zeros((len(self.channels), 0), dtype=float)
+        self.sqi_buffer = np.zeros((len(self.channels), 0), dtype=float)
         self.total_samples = 0
         self.next_emit_sample = self.mfdfa_len
         self.smooth_probs: Optional[np.ndarray] = None
@@ -391,13 +421,17 @@ class RealTimeStrokeDetector:
     def update(self, chunk: np.ndarray) -> List[Dict[str, Any]]:
         chunk = np.asarray(chunk, dtype=float)
         if self.preprocessor is not None:
-            chunk = self.preprocessor.transform(chunk)
+            chunk, sqi_chunk = self.preprocessor.transform_with_sqi(chunk)
+        else:
+            sqi_chunk = chunk
         self.buffer = np.concatenate([self.buffer, chunk], axis=1)
+        self.sqi_buffer = np.concatenate([self.sqi_buffer, sqi_chunk], axis=1)
         self.total_samples += chunk.shape[1]
 
         keep = self.mfdfa_len + 2 * self.step_len
         if self.buffer.shape[1] > keep:
             self.buffer = self.buffer[:, -keep:]
+            self.sqi_buffer = self.sqi_buffer[:, -keep:]
 
         events: List[Dict[str, Any]] = []
         while self.total_samples >= self.next_emit_sample:
@@ -408,20 +442,30 @@ class RealTimeStrokeDetector:
 
             entropy_window = self.buffer[:, end_rel - self.entropy_len : end_rel]
             mfdfa_window = self.buffer[:, end_rel - self.mfdfa_len : end_rel]
-            feats = build_feature_row_from_windows(
-                entropy_window=entropy_window,
-                mfdfa_window=mfdfa_window,
-                channels=self.channels,
-                fs=self.fs,
-                config=self.config,
-            )
+            sqi_window = self.sqi_buffer[:, end_rel - self.entropy_len : end_rel]
+            if self.window_model is not None:
+                feats = compute_sqi(sqi_window, self.fs, self.config)
+            else:
+                feats = build_feature_row_from_windows(
+                    entropy_window=entropy_window,
+                    mfdfa_window=mfdfa_window,
+                    channels=self.channels,
+                    fs=self.fs,
+                    config=self.config,
+                    sqi_window=sqi_window,
+                )
             t_sec = self.next_emit_sample / self.fs
-            event = self._infer_from_feature_dict(feats, timestamp_sec=t_sec)
+            event = self._infer_from_feature_dict(feats, timestamp_sec=t_sec, window=mfdfa_window)
             events.append(event)
             self.next_emit_sample += self.step_len
         return events
 
-    def _infer_from_feature_dict(self, feats: Mapping[str, float], timestamp_sec: float) -> Dict[str, Any]:
+    def _infer_from_feature_dict(
+        self,
+        feats: Mapping[str, float],
+        timestamp_sec: float,
+        window: Optional[np.ndarray] = None,
+    ) -> Dict[str, Any]:
         sqi = float(feats["sqi_total"])
         result: Dict[str, Any] = {
             "timestamp_sec": timestamp_sec,
@@ -437,7 +481,10 @@ class RealTimeStrokeDetector:
             result["status"] = "no-decision"
             return result
 
-        probs = self.model.predict_proba_from_features(feats)
+        if self.window_model is not None and window is not None:
+            probs = np.asarray(self.window_model.predict_proba_from_window(window), dtype=float)
+        else:
+            probs = self.model.predict_proba_from_features(feats)
         if self.smooth_probs is None:
             smooth = probs.copy()
         else:
@@ -662,7 +709,7 @@ def _build_filter_sos(fs: float, config: PipelineConfig, include_bandpass: bool 
         sos_sections.append(signal.tf2sos(b, a))
     if include_bandpass:
         bp = signal.butter(
-            N=4,
+            N=config.bandpass_order,
             Wn=[config.bandpass_low, config.bandpass_high],
             btype="bandpass",
             fs=fs,
@@ -746,8 +793,8 @@ def embed_sequence(x: np.ndarray, m: int) -> np.ndarray:
 
 
 def chebyshev_pairwise(emb: np.ndarray) -> np.ndarray:
-    diff = np.abs(emb[:, None, :] - emb[None, :, :])
-    return diff.max(axis=2)
+    # scipy cdist is ~15x faster than numpy broadcasting for this pairwise op
+    return _scipy_cdist(emb, emb, metric="chebyshev")
 
 
 def approximate_entropy(x: np.ndarray, m: int = 2, r_factor: float = 0.2) -> float:
@@ -809,10 +856,23 @@ def compute_welch_bandpower(
     return np.trapezoid(psd[:, mask], freqs[mask], axis=1)
 
 
+FLATLINE_REL = 1e-2  # a channel 40 dB below the median channel counts as flat
+
+
+def _median_power_ratio(num: np.ndarray, den: np.ndarray) -> float:
+    """Median over channels of num/den, unit-free; channels with no power are skipped."""
+    ok = np.isfinite(num) & np.isfinite(den) & (den > 0)
+    return float(np.median(num[ok] / den[ok])) if ok.any() else 0.0
+
+
 def compute_sqi(window: np.ndarray, fs: float, config: PipelineConfig) -> Dict[str, float]:
     window = np.asarray(window, dtype=float)
     stds = np.nanstd(window, axis=1)
-    flatline_ratio = float(np.mean(stds < 1e-6))
+    # Every threshold below is relative to the signal itself: recordings arrive in V,
+    # uV or raw ADC counts, and absolute floors (std < 1e-6, +EPS on V^2 band power)
+    # made SQI depend on the storage unit.
+    ref_std = float(np.nanmedian(stds))
+    flatline_ratio = float(np.mean(stds <= FLATLINE_REL * ref_std)) if ref_std > 0 else 1.0
 
     robust_scale = np.nanmedian(np.abs(window - np.nanmedian(window, axis=1, keepdims=True)))
     clip_threshold = 8.0 * robust_scale + EPS
@@ -821,8 +881,9 @@ def compute_sqi(window: np.ndarray, fs: float, config: PipelineConfig) -> Dict[s
     line_band = (max(config.notch_freq - 1.0, 0.1), min(config.notch_freq + 1.0, fs / 2 - EPS)) if config.notch_freq else (49.0, 51.0)
     broadband = (1.0, min(35.0, fs / 2 - EPS))
     hf_band = (config.high_freq_band[0], min(config.high_freq_band[1], fs / 2 - EPS))
-    line_ratio = float(np.median((compute_welch_bandpower(window, fs, line_band) + EPS) / (compute_welch_bandpower(window, fs, broadband) + EPS)))
-    hf_ratio = float(np.median((compute_welch_bandpower(window, fs, hf_band) + EPS) / (compute_welch_bandpower(window, fs, broadband) + EPS)))
+    broad_power = compute_welch_bandpower(window, fs, broadband)
+    line_ratio = _median_power_ratio(compute_welch_bandpower(window, fs, line_band), broad_power)
+    hf_ratio = _median_power_ratio(compute_welch_bandpower(window, fs, hf_band), broad_power)
 
     penalties = (
         0.45 * np.clip(flatline_ratio / 0.2, 0.0, 1.0)
@@ -844,6 +905,22 @@ def compute_profile(x: np.ndarray) -> np.ndarray:
     x = np.asarray(x, dtype=float)
     x = x[np.isfinite(x)]
     return np.cumsum(x - np.mean(x))
+
+
+def _segment_residual_variance(segments: np.ndarray, order: int) -> np.ndarray:
+    """Mean squared residual of a degree-`order` polynomial fit to every row.
+
+    `segments` has shape (n_segments, s); all rows share the abscissa t = 0..s-1,
+    so one least-squares projection detrends them all at once instead of calling
+    np.polyfit per segment (the real-time bottleneck: ~330k fits per minute).
+    Returns an array of shape (n_segments,).
+    """
+    s = segments.shape[1]
+    t = np.arange(s, dtype=float)
+    # Orthonormal basis of the polynomial space; residual = projection onto its complement.
+    q_basis, _ = np.linalg.qr(np.vander(t, order + 1))
+    residual = segments - (segments @ q_basis) @ q_basis.T
+    return np.mean(residual**2, axis=1)
 
 
 def _mfdfa_from_profile(
@@ -874,24 +951,15 @@ def _mfdfa_from_profile(
         ns = n // s
         if ns < 2:
             continue
-        vars_ = []
-        t = np.arange(s, dtype=float)
-        for v in range(ns):
-            seg = profile[v * s : (v + 1) * s]
-            coeff = np.polyfit(t, seg, order)
-            trend = np.polyval(coeff, t)
-            vars_.append(np.mean((seg - trend) ** 2))
-        for v in range(ns):
-            start = n - (v + 1) * s
-            seg = profile[start : start + s]
-            coeff = np.polyfit(t, seg, order)
-            trend = np.polyval(coeff, t)
-            vars_.append(np.mean((seg - trend) ** 2))
-        vars_ = np.maximum(np.asarray(vars_, dtype=float), EPS)
-
-        Fqs = []
-        for q in q_values:
-            Fqs.append((np.mean(vars_ ** (q / 2.0))) ** (1.0 / q))
+        # Same 2*ns segments as the classic MFDFA: ns from the start, ns from the end.
+        segments = np.concatenate(
+            [profile[: ns * s].reshape(ns, s), profile[n - ns * s :].reshape(ns, s)], axis=0
+        )
+        # Floor relative to this scale's own variances: an absolute EPS (1e-12) exceeds
+        # the residual variance of EEG stored in volts (~3e-13) and distorted q<0 moments.
+        raw_vars = _segment_residual_variance(segments, order)
+        vars_ = np.maximum(raw_vars, EPS * max(float(raw_vars.max()), np.finfo(float).tiny))
+        Fqs = (np.mean(vars_[:, None] ** (q_values[None, :] / 2.0), axis=0)) ** (1.0 / q_values)
         fluct.append(Fqs)
         valid_scales.append(s)
 

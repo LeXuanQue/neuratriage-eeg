@@ -1,17 +1,31 @@
-# Vercel Python serverless dependencies (root)
-# Slimmed for 250MB unzipped limit.
-# Heavy ML deps (lightgbm, scipy, pandas) lazy-load qua _can_load_pipeline()
-# nếu Vercel build fail → strip block "ML pipeline (optional)" và deploy
-# /api/infer ở Render/Railway thay thế.
+# NeuraTriage EEG app runtime dependencies.
+# Install from the repo root:
+#   .venv\Scripts\python.exe -m pip install -r requirements.txt
 
-# Core API
-flask>=3.0,<4
-pyjwt>=2.8,<3
+# FastAPI backend
+fastapi>=0.115,<1
+uvicorn[standard]>=0.30,<1
+python-multipart>=0.0.9,<1
+SQLAlchemy>=2.0,<3
+pydantic-settings>=2.0,<3
+PyJWT>=2.8,<3
 bcrypt>=4.1,<5
+APScheduler>=3.10,<4
 
-# ML pipeline (optional — bỏ nếu Vercel báo bundle > 250MB)
-numpy>=1.26
-scipy>=1.11
-pandas>=2.1
-lightgbm>=4.1
-joblib>=1.3
+# Reports and optional email delivery
+reportlab>=4.0,<5
+sendgrid>=6.11,<7
+
+# Live EEG device (Bluetooth LE) — only needed to stream from real hardware.
+# The app, tests, and CI run without it (imported lazily in device_source.py).
+bleak>=0.22,<1
+
+# EEG/ML pipeline
+numpy>=2.0,<3  # SQI uses np.trapezoid, added in NumPy 2.0
+scipy>=1.11,<2
+pandas>=2.1,<3
+scikit-learn>=1.3,<2
+lightgbm>=4.1,<5
+joblib>=1.3,<2
+optuna>=3.5,<5
+EMD-signal>=1.6,<2

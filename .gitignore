@@ -20,11 +20,48 @@ Thumbs.db
 
 # Project runtime data
 data/uploads/
+data/reports/
+data/*.db
 data/sessions.db
 out/
 .mplconfig/
 *.log
+logs/
+
+# Local research datasets / heavy generated outputs
+21679035/
+dataset_healthy/
+dataset_real/
+dataset_ischemic/
+dataset_npz/
+dataset_hemorrhagic/hemorrhagic.csv
+mne_data/
+results/
+models_store/
+backend/models/*backup*.joblib
+backend/models/*_pre_*.joblib
+
+# TUH corpus files and anything derived row-by-row from them: the TUH data use
+# agreement forbids redistribution. Manifests/scans with IDs only are fine.
+dataset_tuh/npz/
+dataset_tuh/feature_table_tuh.csv
+dataset_tuh_raw/
+
+# Raw headband recordings (biometric data of the wearer)
+data/ble_signals_log*.csv
+
+# Office lock files and manual backups
+~$*
+*.bak
+*_pre_P0_*.docx
+
+# Tunnel binaries (cloudflared, ngrok) — too large to commit
+tools/
 
 # Secrets
 .env
 .env.local
+.env.*.local
+
+# Vercel
+.vercel/

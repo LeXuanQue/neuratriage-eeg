@@ -1,12 +1,20 @@
 @echo off
 setlocal
 set APP_DIR=%~dp0
-set PY=%APP_DIR%.venv\Scripts\python.exe
-if not exist "%PY%" set PY=C:\Users\Admin\EEG\.venv\Scripts\python.exe
+set ROOT_DIR=%APP_DIR%..
+set PY=%ROOT_DIR%\.venv\Scripts\python.exe
 
-"%PY%" -c "import numpy,pandas,scipy,sklearn,lightgbm,optuna,joblib" >nul 2>nul
+if not exist "%PY%" set PY=python
+
+"%PY%" -c "import fastapi,uvicorn,sqlalchemy,pydantic_settings,apscheduler,bcrypt,jwt,numpy,scipy,pandas,sklearn,lightgbm,joblib,multipart,reportlab" >nul 2>nul
 if errorlevel 1 (
-  set PY=C:\Users\Admin\EEG\.venv\Scripts\python.exe
+  echo Missing FastAPI app dependencies. Run:
+  echo   .venv\Scripts\python.exe -m pip install -r requirements.txt
+  exit /b 1
 )
 
-"%PY%" "%APP_DIR%app.py" --host 127.0.0.1 --port 8501
+if "%PORT%"=="" set PORT=8501
+
+pushd "%ROOT_DIR%\backend"
+"%PY%" -m uvicorn app.main:app --host 127.0.0.1 --port %PORT%
+popd

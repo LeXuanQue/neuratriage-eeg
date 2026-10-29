@@ -1,8 +1,3 @@
-numpy
-scipy
-pandas
-scikit-learn
-lightgbm
-optuna
-joblib
-EMD-signal
+# Kept for compatibility with commands run from backend/.
+# The single source of truth for app dependencies is ../requirements.txt.
+-r ../requirements.txt

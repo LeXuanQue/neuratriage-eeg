@@ -1,0 +1,32 @@
+.git
+.venv
+venv
+env
+__pycache__
+*.pyc
+*.pyo
+.pytest_cache
+.mplconfig
+
+# Runtime state
+data/*.db
+data/uploads
+data/reports
+logs
+*.log
+
+# Large local research datasets — mount read-only via docker-compose volumes.
+21679035
+dataset_ischemic
+dataset_healthy
+dataset_npz
+mne_data
+out
+# NOTE: results/ is intentionally NOT ignored — /api/research/metrics (Insights
+# screen) reads results/*.json at runtime, so it must be in the image.
+
+# Local tooling
+.vercel
+.env
+.env.local
+.env.*.local
