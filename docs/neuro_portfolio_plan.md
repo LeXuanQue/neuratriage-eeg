@@ -8,12 +8,12 @@ _2026-10-29 · dựa trên: memory dự án, `docs/lit_review_eeg_fm.md` (P2), g
 |---|---|---|
 | App FastAPI + UI + WS + device BLE | Xong. Live device **chỉ SQI/No-Decision**, không ra IS/NS (cố ý) | memory 07-09 → 08-20 |
 | Model | `model.joblib` binary (đã sửa lỗi đơn vị V/µV) + Riemann (4 ms/hop) | memory 10-06 |
-| Test | 164–175 pass ở lần chạy cuối (10-06). **Chưa chạy lại hôm nay** | memory |
+| Test | 240 pass, 2 skip (chạy lại 29/10/2026) | `pytest -q` |
 | Bằng chứng | Cascade AUC feat 0.99→0.95→0.94→0.65 khi khớp trạng thái mắt; Riemann giữ ~0.82; ngưỡng cố định → 51–66 false alert/giờ; recalibrate spec80 → sens 0.86, ~10 FA/h | `results/*.json` |
 | Paper | Bản gốc đã nộp. `EEGStroke_TAPS_binary_v2_2026-10-06.docx` (12 trang) **chưa tracked**, còn placeholder ACM + NOTE ở references | memory |
-| Git | Nhánh `feat/fastapi-rewrite`, **chưa có upstream (chưa push)**. Chưa commit: `README.md`, `channel_mapper.py`; 9 file `dataset_hemorrhagic/*` xoá trên đĩa chưa stage; nhiều docx/zip untracked | `git status` |
-| Việc tồn | User study (venue HCI bắt buộc), model 3-class (user muốn lại), fNIRS+PPG fusion, `PROGRESS.md` stale từ 05-29 | memory |
-| Hoạt động gần nhất | 10-07: recalibration. 10-22: survey P2 **và** một phiên Cyton: `backend/app/services/cyton_sim.py` + `test_cyton_sim.py` (untracked), preset `openbci_cyton` trong `channel_mapper.py` (uncommitted), sweep 6 montage 8-kênh trên TUSL → `results/cyton_montage/*.json` (thư mục `results/` bị gitignore). Memory chưa ghi phiên này | mtime, `git status` |
+| Git | `feat/fastapi-rewrite` đã merge vào `main` (PR #1 và #2, 29/10/2026); `main` là nhánh mặc định. Đã gỡ `dataset_hemorrhagic`, viết lại README, thêm LICENSE (MIT). Còn untracked: nhiều docx/zip, `poster/`, `UIST_Demo_LaTeX/`, `dataset_tuh/` | `git log` |
+| Việc tồn | User study (venue HCI bắt buộc), model 3-class (cần dữ liệu xuất huyết, đã gỡ khỏi repo), fNIRS+PPG fusion, `PROGRESS.md` stale từ 05-29 | memory |
+| Hoạt động gần nhất | 10-07: recalibration. 10-22: survey P2 **và** một phiên Cyton: `backend/app/services/cyton_sim.py` + `test_cyton_sim.py`, preset `openbci_cyton` trong `channel_mapper.py` (đều đã commit), sweep 6 montage 8-kênh trên TUSL → `results/cyton_montage/*.json` (thư mục `results/` bị gitignore) | `git log` |
 
 ## 2. Ràng buộc thực tế (đã kiểm tra)
 
@@ -41,7 +41,7 @@ Xếp theo tín hiệu portfolio trên mỗi giờ, và N1/N2A dùng lại hạ 
 
 | Tuần | Việc | Xong khi |
 |---|---|---|
-| 1 | N0: chạy lại pytest, commit README+channel_mapper, quyết định 9 file hemorrhagic, push nhánh, gỡ placeholder v2 | repo push được, test xanh |
+| 1 | N0: xong 29/10/2026 gồm pytest, commit, gỡ hemorrhagic, push và merge PR #1/#2. Còn lại: gỡ placeholder ACM của bản v2 | placeholder v2 đã gỡ |
 | 2–3 | N1: 2 control còn thiếu, viết bài | bản nháp đầy đủ + hình |
 | 4–6 | N2A: H1 từ headers (không tải EDF), H2 probe | 2 bảng kết quả, kể cả kết quả âm |
 | 1–2 (song song) | Hồ sơ đạo đức + phiếu đồng ý chung cho user study và N3; đọc DUA của TUH | biết trường có yêu cầu gì, biết được phép dùng Colab với TUH không |
@@ -77,7 +77,7 @@ N4 để sau T1/2027 (cần mua phần cứng). N2B/N5 chờ GPU.
 
 **Mâu thuẫn trên đã giải quyết (liệt kê remote chỉ đọc, 2026-10-29):** máy chủ TUH chỉ có TUEG `v2.0.1` và `v2.0.2` (không có v1.x). `DOCS` của hai bản này chỉ có `headers.tar.gz` và các `sessions_*.list`, **không có báo cáo lâm sàng**. Vậy cách gán nhãn bằng từ khoá báo cáo như Peterson **không làm được qua tài khoản này**. **Dịch vụ tìm báo cáo của NEDC đã xác nhận tồn tại** (trang `isip.piconepress.com/projects/nedc/html/tuh_eeg/`, đọc 2026-10-29): "We no longer distribute reports with our corpora" nhưng cho tìm từ khoá trên báo cáo đã ẩn danh. Cách làm: gửi email tới `help@nedcdata.org` (subject "Python Script") một script Python **chỉ dùng thư viện chuẩn**, nhận danh sách tên file, NEDC chạy trên báo cáo và trả lại **danh sách file khớp**. Có ví dụ `query.tar.gz` trên trang. Trang không nêu phiên bản nào có báo cáo, không có ví dụ từ khoá/ICD, và không nêu điều khoản DUA về báo cáo.
 - **Hệ quả:** làm được bước từ khoá của Peterson, nhưng **không thể duyệt tay báo cáo** như họ đã làm, vì bạn không nhận được báo cáo. Nhãn sẽ nhiễu hơn (phủ định "no infarct", "history of stroke", tiền sử). Phải dựng regex xử lý phủ định, ước lượng độ chính xác bằng tập nhỏ có nhãn, và gọi đây là weak label.
-- **Chưa làm:** gửi email (là việc của bạn, mình không gửi thay). Mình có thể soạn script theo kiểu TDD để bạn xem trước khi gửi. Các sub-corpus có sẵn (`tuh_eeg_abnormal`, `_slowing`, `_events`, `_artifact`) chỉ cho nhãn bất thường/làm chậm, không phải IS. Cách chạy rsync trên Windows nay là MSYS2 (xem memory `reference_tuh_rsync_windows.md`).
+- **Đã làm:** `scripts/nedc_report_query.py` (38 test trên câu tổng hợp; độ chính xác trên báo cáo thật chưa đo). **Chưa làm:** gửi email tới NEDC (việc của bạn). Các sub-corpus có sẵn (`tuh_eeg_abnormal`, `_slowing`, `_events`, `_artifact`) chỉ cho nhãn bất thường/làm chậm, không phải IS. Cách chạy rsync trên Windows nay là MSYS2 (xem memory `reference_tuh_rsync_windows.md`).
 
 **Chatterjee (conformal, AIME 2026):** dữ liệu lệch theo bệnh nhân làm vỡ độ phủ conformal chuẩn; calibration cá nhân hoá tăng coverage hơn 20 điểm phần trăm (theo abstract). Bài nói về seizure và tập dự đoán, không phải abstention. Tên các phương pháp và dataset **chưa đọc**. Một công thức CRC có abstain cho lệch theo bệnh nhân có vẻ chưa ai làm, nhưng đó là kết luận từ một lượt tìm, chưa phải khẳng định.
 
