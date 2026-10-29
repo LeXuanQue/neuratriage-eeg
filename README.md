@@ -138,3 +138,9 @@ tests run without it). See [`docs/device_bring_up.md`](docs/device_bring_up.md).
 | Plan toward the full paper | [`docs/full_paper_plan.md`](docs/full_paper_plan.md) |
 | Literature reviews | [`docs/lit_review.md`](docs/lit_review.md), [`docs/lit_review_eeg_fm.md`](docs/lit_review_eeg_fm.md) |
 | Deployment | [`docs/deploy.md`](docs/deploy.md) |
+
+## License
+
+The code in this repository is released under the [MIT License](LICENSE). The license does not
+cover the datasets used for training and evaluation, which are not included here and keep their
+own terms (for example the TUH data-use agreement).
