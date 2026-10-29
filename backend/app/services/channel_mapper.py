@@ -30,6 +30,17 @@ DEVICE_PRESETS: Dict[str, Dict[str, object]] = {
         "fs": 256,
         "description": "Brain-Life Focus+ (2 EEG channels AF3, AF4; protocol confirmed via vendor app)",
     },
+    "openbci_cyton": {
+        # 8 monopolar inputs vs a shared SRB2 reference (earlobe), 250 Hz. Simulated
+        # first via app.services.cyton_sim before the real board is wired.
+        # 4 homologous pairs (asymmetry/BSI features need both sides). Best a-priori
+        # symmetric set on same-rig TUSL (results/cyton_montage/D_sym_fp.json: AUC
+        # 0.869, patient AUC 0.840 vs 18-ch 0.858 / 0.750). FP1/FP2 sit on hairless
+        # skin (good dry contact) and double as blink/EOG channels for the SQI gate.
+        "channels": ["FP1", "FP2", "F3", "F4", "C3", "C4", "T3", "T4"],
+        "fs": 250,
+        "description": "OpenBCI Cyton (8 EEG channels, ADS1299, stroke-screening montage)",
+    },
     "full_18ch": {
         "channels": list(DEFAULT_CHANNELS),
         "fs": 256,

@@ -9,12 +9,11 @@ This is a research prototype, not a medical device.
 
 ## Current Evidence Boundary
 
-The UIST demo target is triage-support interaction, not diagnosis. Current
-validated evidence is binary ischemic-vs-non-stroke using 50 ischemic EEG records
-and 50 healthy resting-baseline records. Four UCLH hemorrhagic patients
-(`P3`, `P5`, `P6A`, `P11`) have been converted as exploratory evidence, but
-validated 3-class performance still needs at least one more HS patient for the
-planned 5-fold patient-level CV protocol.
+The UIST demo target is triage-support interaction, not diagnosis. The active
+scope is binary ischemic-vs-non-stroke using 50 ischemic EEG records and
+50 healthy resting-baseline records. Hemorrhagic stroke is not a primary app or
+paper claim; the small UCLH hemorrhagic set is kept only as exploratory
+background/future-work evidence.
 
 See `docs/uist_evidence.md` for the safe claim language, metrics, and
 limitations.
