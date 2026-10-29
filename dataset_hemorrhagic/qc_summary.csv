@@ -1,5 +1,0 @@
-patient_id,label,npz_path,source_bdf,injection_start_sec,crop_duration_sec,retained_windows,sqi_mean,sqi_min,sqi_max,finite_fraction,nan_count,p99_5_abs_uv,high_amplitude_warning
-uclh_p3_big_ich,hemorrhagic,C:\Users\Admin\eeg-stroke-app\dataset_hemorrhagic\p3_td1_preinject_10s.npz,data\Patient_03 (1)\Patient_03\P3_TD1.bdf,10.72,10.0,13,0.7144849055855036,0.6159621532755003,0.9565753118394102,1.0,0,37571.55297324208,True
-uclh_p5_small_ich,hemorrhagic,C:\Users\Admin\eeg-stroke-app\dataset_hemorrhagic\p5_td1_preinject_20s.npz,data\Patient_05\Patient_05\P5_TD1.bdf,25.33,20.0,33,0.7134140026912328,0.5959250489985116,0.9349921770255352,1.0,0,31957.23855867993,True
-uclh_p6a_big_ich,hemorrhagic,C:\Users\Admin\eeg-stroke-app\dataset_hemorrhagic\p6a_td1_preinject_20s.npz,data\Patient_06a\P6a_TD1.bdf,28.19,20.0,33,0.7537459442710268,0.613518989220614,0.9741418822384345,1.0,0,12583.294580690663,True
-uclh_p11_big_ich,hemorrhagic,C:\Users\Admin\eeg-stroke-app\dataset_hemorrhagic\p11_td1_preinject_8s.npz,data\Patient_11\P11_TD1.bdf,9.05,8.0,9,0.6424579302549174,0.6271006523888022,0.7002682243280546,1.0,0,19920.43575271937,True
