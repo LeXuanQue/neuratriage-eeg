@@ -1,131 +1,140 @@
 # NeuraTriage EEG
 
-Research prototype for EEG-based stroke triage. The active app is a FastAPI
-backend that serves the static React/Babel frontend and exposes REST/WebSocket
-APIs for login, live stream/replay, upload, inference, patients, devices,
-alerts, dashboard, and PDF reports.
+A real-time EEG system for pre-hospital stroke triage that **withholds a decision when signal
+quality is too low**, and that measures how much of its own accuracy comes from the recording
+setup rather than from pathology.
 
-This is a research prototype, not a medical device.
+> **Research prototype, not a medical device.** It reports internal metrics and has not been
+> clinically validated.
 
-## Current Evidence Boundary
+The work targets the sensing and interaction layer rather than a new classifier: continuous
+signal-quality gating, an explicit *No-Decision* state instead of a forced guess, hysteresis and
+cooldown against alarm flicker, and a glass-box panel that shows why an alert fired.
 
-The UIST demo target is triage-support interaction, not diagnosis. The active
-scope is binary ischemic-vs-non-stroke using 50 ischemic EEG records and
-50 healthy resting-baseline records. Hemorrhagic stroke is out of scope: the
-small exploratory UCLH hemorrhagic set was removed from this repository.
+## What the evidence supports
 
-See `docs/uist_evidence.md` for the safe claim language, metrics, and
-limitations.
+The task is binary ischemic stroke vs. non-stroke (50 + 50 records, patient-level cross-validation).
 
-## Active Runtime
+- **The headline score is confounded.** Entropy/MFDFA features reach macro-F1 0.79 / AUC 0.91
+  across cohorts, and five signal-quality (SQI) features that carry no pathology information
+  already reach AUC 0.998. The two classes come from different recording setups, so most of the
+  cross-cohort accuracy reflects acquisition, not diagnosis.
+- **On a single rig the shortcut weakens.** On the TUH Slowing Corpus (N=29, one clinical rig)
+  entropy features reach AUC 0.823 against 0.771 for SQI-only. This is a slowing proxy, not
+  ischemic stroke, and is directional evidence only.
+- **Stricter controls lower the number further** (held-out source, age matching, eye-state
+  matching; see `scripts/leave_source_out.py`), and fixed-threshold alerting still raises many
+  false alerts on healthy controls (`scripts/clinical_utility.py`). The current model is not
+  suitable for continuous monitoring.
+- **The live headband (Brain-Life Focus+, 2 channels AF3/AF4) drives quality gating and
+  No-Decision only.** Classification uses the 18-channel replay path.
+- **Not done yet:** a stroke cohort recorded on the same device as its controls, and a user study
+  of the No-Decision interaction.
 
-- `backend/app/` - active FastAPI backend (serves everything on port 8501).
-- `backend/frontend/app.html` - active command-center UI.
-- `backend/frontend/index.html` - redirect entrypoint to `app.html`.
-- `backend/frontend/app/` and `backend/frontend/shared/` - active screens/helpers.
-- `backend/eeg_stroke_pipeline.py` - EEG feature extraction, inference,
-  training, and realtime detector logic.
-- `backend/models/model.joblib` - small demo model expected by the prototype.
+Details, safe claim language and limitations: [`docs/uist_evidence.md`](docs/uist_evidence.md).
+The generated `results/` folder is not versioned, so the scripts above need the local datasets.
 
-Legacy files are still kept for reference:
-
-- `legacy/api/index.py` - old Flask API, no longer the default runtime.
-- `legacy/app.py` - old local research workbench.
-- `backend/frontend/components/`, `backend/frontend/screens/`, `backend/frontend/lib/` - old UI slices.
-
-## Project Layout
-
-```text
-eeg-stroke-app/
-  backend/
-    app/                  FastAPI app, routers, services, SQLAlchemy models
-    frontend/             static UI (served by FastAPI on the same port)
-      app.html            active command-center entrypoint
-      app/                React screens, shell, visualizations
-      shared/             API client, WebSocket, live-data helpers
-      landing.html        public landing page
-    models/               demo model artifacts
-    tests/                FastAPI backend tests
-    eeg_stroke_pipeline.py
-    run_app.bat           local FastAPI launcher
-  tests/                  top-level API contract tests
-  Dockerfile
-  docker-compose.yml
-  requirements.txt
-```
-
-Local datasets, SQLite databases, uploads, reports, logs, and generated result
-folders are ignored by Git and Docker.
-
-## Run Locally
-
-From the repo root:
+## Quick start
 
 ```bat
 .venv\Scripts\python.exe -m pip install -r requirements.txt
 backend\run_app.bat
 ```
 
-Open:
-
-```text
-http://127.0.0.1:8501/
-```
-
-Direct backend command:
+Open <http://127.0.0.1:8501/>. Direct command:
 
 ```bat
 cd backend
 ..\.venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8501
 ```
 
-Demo login:
+Demo login (local demo only; replace before any public deployment):
 
 ```text
 doctor@neuratriage.com / demo1234
 admin@neuratriage.com  / demo1234
 ```
 
-## Test
+The demo needs no hardware: it replays de-identified recordings and can inject artifacts so you
+can watch the SQI gate switch the interface into No-Decision.
 
-```bat
-.venv\Scripts\python.exe -m pytest -q
-```
-
-## Docker
+### Docker
 
 ```bat
 docker compose up --build
 ```
 
-Then open:
+Replay datasets are mounted read-only from `./dataset_*` (see `docker-compose.yml`). Deployment,
+secrets, the single-worker requirement and SendGrid are covered in
+[`docs/deploy.md`](docs/deploy.md).
 
-```text
-http://127.0.0.1:8501/
+### Tests
+
+```bat
+.venv\Scripts\python.exe -m pytest -q
 ```
 
-## Deploy Direction
-
-The full prototype should be deployed as a Docker/FastAPI app on Render,
-Railway, Fly.io, a VPS, or similar. `vercel.json` is kept only for a static
-frontend preview and does not deploy the FastAPI/ML backend.
-
-See [`docs/deploy.md`](docs/deploy.md) for the step-by-step deploy guide
-(secrets, single-worker requirement, persistent volume, datasets, SendGrid).
-
-## Core Flow
+## How it works
 
 ```text
-Login
-  -> Dashboard
-  -> Live EEG WebSocket or replay NPZ
-  -> Alert creation / ack / dismiss
-  -> Upload NPZ
-  -> Offline inference
-  -> Patient and device records
-  -> Weekly PDF report generation
+EEG (18 ch, 256 Hz)
+  -> causal band-pass 1-35 Hz
+  -> signal-quality index per window  --(low)--> No-Decision
+  -> entropy + MFDFA features (1 s / 4 s dual window, 125-dim)
+  -> calibrated LightGBM (or Riemann model)
+  -> EMA smoothing, hysteresis 0.80 / 0.60, cooldown
+  -> alert + glass-box explanation
 ```
 
-Uploads accept inference-ready `.npz` or `.npy` files. Raw `.edf`, `.bdf`, and
-`.fif` files must be converted first with the converter scripts before demo
-inference.
+A live headband or replay feeds the same pipeline over WebSocket. Alerts can be acknowledged or
+dismissed, and weekly PDF reports can be generated.
+
+## Repository layout
+
+```text
+backend/
+  app/               FastAPI app: routers/, services/, ws/, models/
+  frontend/          static React/Babel UI served by FastAPI (app.html is the entrypoint)
+  models/            demo model artifacts (model.joblib)
+  tests/             backend tests
+  eeg_stroke_pipeline.py   feature extraction, inference, training, realtime detector
+scripts/             research and data-conversion scripts (see below)
+tests/               API contract and source-confound tests
+docs/                evidence, plans, literature reviews, deploy and device guides
+figures/             figures used in the paper and poster
+legacy/              old Flask API and research workbench, kept for reference only
+```
+
+Local datasets, SQLite databases, uploads, reports, logs and `results/` are ignored by Git and
+Docker. Uploads accept inference-ready `.npz` or `.npy`; convert raw `.edf`, `.bdf` and `.fif`
+first with the converter scripts.
+
+## Research scripts
+
+| Script | Purpose |
+|---|---|
+| `diagnose_source_confound.py` | probe whether source or SQI separates the classes |
+| `leave_source_out.py` | held-out-source evaluation with age and eye-state matching |
+| `run_mfdfa_ablation.py` | feature-family ablation (entropy, MFDFA, SQI) |
+| `clinical_utility.py`, `device_recalibration.py` | false alerts per hour and per-device thresholds |
+| `tusl_to_npz.py`, `tuab_to_npz.py` | build same-rig datasets from the TUH corpora |
+| `nedc_report_query.py` | keyword filter for TUH reports, run by NEDC on their side (stdlib only) |
+| `convert_*.py`, `build_feature_table.py` | dataset conversion and feature tables |
+
+TUH data is distributed under the corpus data-use agreement and is not redistributed here.
+
+## Live headband
+
+Streaming from the Brain-Life Focus+ needs Bluetooth LE (`bleak`, imported lazily; the app and
+tests run without it). See [`docs/device_bring_up.md`](docs/device_bring_up.md).
+
+## Documentation
+
+| Topic | File |
+|---|---|
+| Claims, metrics, limitations | [`docs/uist_evidence.md`](docs/uist_evidence.md) |
+| Technical report | [`docs/technical_report.md`](docs/technical_report.md) |
+| Same-rig (TUH) runbook | [`docs/tuh_samerig.md`](docs/tuh_samerig.md) |
+| Plan toward the full paper | [`docs/full_paper_plan.md`](docs/full_paper_plan.md) |
+| Literature reviews | [`docs/lit_review.md`](docs/lit_review.md), [`docs/lit_review_eeg_fm.md`](docs/lit_review_eeg_fm.md) |
+| Deployment | [`docs/deploy.md`](docs/deploy.md) |
