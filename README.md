@@ -11,9 +11,8 @@ This is a research prototype, not a medical device.
 
 The UIST demo target is triage-support interaction, not diagnosis. The active
 scope is binary ischemic-vs-non-stroke using 50 ischemic EEG records and
-50 healthy resting-baseline records. Hemorrhagic stroke is not a primary app or
-paper claim; the small UCLH hemorrhagic set is kept only as exploratory
-background/future-work evidence.
+50 healthy resting-baseline records. Hemorrhagic stroke is out of scope: the
+small exploratory UCLH hemorrhagic set was removed from this repository.
 
 See `docs/uist_evidence.md` for the safe claim language, metrics, and
 limitations.

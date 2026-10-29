@@ -43,7 +43,7 @@ SENDGRID_FROM_NAME=NeuraTriage EEG
 - The demo model (`backend/models/model.joblib`) is baked into the image.
   Auto-loaded on startup; SHA-256 logged for integrity.
 - `results/*.json` is baked in so the **Insights** screen has research metrics.
-- `dataset_hemorrhagic/` is not required for the primary binary NS/IS demo.
+- Hemorrhagic data is out of scope and is no longer shipped with the repository.
 - The **large** replay sets (`dataset_ischemic`, `dataset_healthy`, `dataset_npz`)
   are `.dockerignore`d to keep the image small. To enable IS/NS replay:
   - **docker-compose:** already mounted read-only (see `docker-compose.yml`), or

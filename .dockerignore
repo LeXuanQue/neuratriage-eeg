@@ -16,7 +16,6 @@ logs
 *.log
 
 # Large local research datasets — mount read-only via docker-compose volumes.
-# (dataset_hemorrhagic is small and stays baked in for out-of-the-box HS replay.)
 21679035
 dataset_ischemic
 dataset_healthy
