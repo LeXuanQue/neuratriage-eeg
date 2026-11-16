@@ -81,3 +81,20 @@ Chạy trọn luồng trên 20 bản ghi TUAR đầu (12 bệnh nhân; nửa tes
 **Quy tắc nếu muốn chỉnh luật lý do** (ví dụ thêm lý do riêng cho artifact do mắt): chỉ được phát triển trên **nửa calib**, chốt bằng văn bản, rồi mới chạy nửa test một lần.
 
 **Phương án dự phòng nếu R1 không đạt:** đóng góp C2 chuyển trọng tâm từ "SQI v2 phát hiện tốt hơn" sang "đặt chất lượng tín hiệu theo từng kênh vào vòng tương tác, kèm lời khuyên hành động". Bộ chấm điểm theo kênh khi đó có thể dùng v1, và giá trị được chứng minh bằng Study 1. Báo cáo trung thực kết quả âm của R1.
+
+## 6. Kết quả TUAR đầy đủ (2026-11-17) và kế hoạch scorer học
+
+**Kết quả nửa test (113 bệnh nhân, 157 bản ghi, 532k kênh-cửa sổ, ngưỡng drift đóng băng 2.19):**
+
+- **Luật bỏ hướng (đã đăng ký trước): ĐẠT.** Model học trên đặc trưng v2 hơn v1: AUC 0.827 so với 0.746, chênh **+0.081 [0.048, 0.117]**. Cận dưới CI chạm sát 0.05 nên chỉ đạt theo ước lượng điểm.
+- **Luật cố định (bản đang triển khai): THUA v1.** Kênh: 0.708 so với 0.743, chênh −0.035 [−0.063, −0.008]. Cửa sổ: 0.747 so với 0.818. Nghĩa là đặc trưng v2 có thông tin, nhưng bộ trọng số chỉnh tay không khai thác được.
+- **Theo loại:** v2 hơn rõ ở eyem (+0.18), elec (+0.21), chew_elec, eyem_musc. Ngang ở musc, chew. Kém ở shiv (−0.09, CI cắt 0).
+- **E7:** 50% kênh-cửa sổ artifact có lý do; trong đó **71% đúng loại**. musc thường bị gọi là `drift` (17.5k/79k), eyem phần lớn không gắn cờ.
+- **E8:** v2 trúng kênh 0.53, v1 0.54, ngẫu nhiên 0.38. Cả hai hơn ngẫu nhiên, v2 không hơn v1 (chênh [−0.044, 0.039]).
+
+**Kế hoạch scorer học (chốt trước khi nhìn bất kỳ con số nào của nó):**
+
+1. Fit `fit_logistic` trên `V2_FEATURES` với **nửa calib** TUAR. Ngưỡng hoạt động = phân vị 95% của P(artifact) trên kênh-cửa sổ sạch của nửa calib (cùng logic với ngưỡng drift: 5% báo nhầm trên kênh sạch). Đóng băng hệ số ra JSON.
+2. Đánh giá **một lần** trên nửa test: AUC so với v1 học theo đúng cách đó, CI bootstrap theo bệnh nhân. Báo cáo đây là phân tích bổ sung, không phải luật đăng ký trước.
+3. **Cổng an toàn E9** với scorer học: IS không bị gate nhiều hơn NS, TUSL slow không bị gate nhiều hơn bckg. Nếu trượt, thử **một** biến thể đã định sẵn: bỏ đặc trưng trạng thái não (`delta_ratio`, `alpha_peak`) rồi lặp lại bước 1–3. Nếu vẫn trượt, giữ luật cố định và viết R1 theo phương án dự phòng.
+4. Chỉ triển khai scorer học vào ChannelQualityTracker khi qua cả bước 2 và 3. Lý do (reasons) và lời khuyên vẫn lấy từ luật, scorer học chỉ quyết định điểm và cổng.
