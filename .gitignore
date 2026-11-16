@@ -65,3 +65,6 @@ tools/
 
 # Vercel
 .vercel/
+
+# Study 1 participant event logs (pseudonymous, never versioned)
+data/study_logs/

@@ -86,7 +86,7 @@ window.NTSidebar = function NTSidebar({active, onChange, t, lang, sessionInfo, o
   ];
 
   return (
-    <aside style={{
+    <aside className="nt-sidebar" style={{
       width:240, flex:"none", background:"var(--bg-1)", borderRight:"1px solid var(--line)",
       display:"flex", flexDirection:"column", height:"100vh", position:"sticky", top:0, zIndex:20
     }}>

@@ -278,6 +278,17 @@
           });
         } else if (payload.type === "channel_quality") {
           channelQualityRef.current = payload;
+          if (window.NTStudy && window.NTStudy.active) {
+            const g = payload.guidance;
+            window.NTStudy.log("quality", {
+              t_stream: payload.timestamp_sec,
+              score: payload.score,
+              worst: payload.worst_channel,
+              channels: (payload.channels || []).map((c) => [c.name, c.score, (c.reasons || [])[0] || ""]),
+              // what the operator could see: guidance is only rendered in condition G
+              guidance_shown: window.NTStudy.condition === "G" && g ? g.reason : "",
+            });
+          }
           setFrame((prev) => ({ ...(prev || fallbackFrame), channelQuality: payload }));
         } else if (payload.type === "ready") {
           const readyChannels = cleanChannels(payload.device_channels || payload.mapped_channels || deviceChannelsRef.current);

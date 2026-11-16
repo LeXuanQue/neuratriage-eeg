@@ -55,6 +55,7 @@ from .routers import patients as patients_router
 from .routers import research as research_router
 from .routers import sessions as sessions_router
 from .routers import reports as reports_router
+from .routers import study as study_router
 from .services.model_manager import get_manager
 from .services.scheduler import start_scheduler, stop_scheduler
 from .ws import stream as stream_ws
@@ -149,6 +150,7 @@ def create_app() -> FastAPI:
     app.include_router(inference_router.router)
     app.include_router(devices_router.router)
     app.include_router(demo_router.router)
+    app.include_router(study_router.router)
     app.include_router(sessions_router.router)
     app.include_router(patients_router.router)
     app.include_router(alerts_router.router)

@@ -313,6 +313,15 @@ input::placeholder{color:var(--ink-4)}
   overflow-y:auto;
   min-width:0;
 }
+/* Study 1 mode (shared/study-log.js): lock navigation and tweaks during a session */
+body.nt-study .nt-sidebar,
+body.nt-study .twk-panel{display:none !important}
+.nt-study-badge{
+  position:fixed;left:10px;bottom:10px;z-index:50;
+  font:600 11px/1 var(--font-mono, monospace);color:var(--ink-3);
+  background:var(--bg-2);border:1px solid var(--line);border-radius:6px;padding:5px 7px;
+  pointer-events:none;
+}
 /* Per-channel signal quality (Study 1 condition G) */
 .nt-cq-title{
   font-size:10.5px;text-transform:uppercase;letter-spacing:0.10em;
