@@ -79,4 +79,39 @@ Module riêng `backend/sqi_v2.py`. **Không thay `compute_sqi`**, vì model đan
 **Việc tiếp theo, chốt trước khi chạy:**
 - Chỉnh ngưỡng drift trên **một nửa số bệnh nhân TUAR** (cùng máy, có nhãn).
 - Đóng băng ngưỡng, rồi đánh giá trên nửa còn lại và chạy lại cả hai kiểm tra an toàn.
-- Nếu cặp IS/NS vẫn không đạt, Paper ghi rõ là hạn chế: SQI v2 có thể gate nhiều hơn trên máy đo không có high-pass phần cứng. Hướng dẫn trong giao diện vẫn có giá trị, vì lý do `drift` đi kèm hành động "ấn chặt/làm ướt điện cực".
+- Nếu cặp IS/NS vẫn không đạt, paper ghi rõ là hạn chế: SQI v2 có thể gate nhiều hơn trên máy đo không có high-pass phần cứng. Hướng dẫn trong giao diện vẫn có giá trị, vì lý do `drift` đi kèm hành động "ấn chặt/làm ướt điện cực".
+
+## 4. R2: No-Decision có đảm bảo conformal
+
+**Code:**
+- `backend/conformal_triage.py`: 22 test, trong đó có kiểm chứng Monte Carlo cho đảm bảo FAR ≤ α.
+- `scripts/conformal_no_decision.py` → `results/conformal_no_decision.json`.
+
+**Cách làm:**
+- Conformal phân lớp (Mondrian) ở **mức bệnh nhân**. Điểm không phù hợp của lớp "đối chứng" là p, của lớp "stroke" là 1 − p, mỗi lớp có ngưỡng riêng.
+- Tập dự đoán chỉ có một lớp → báo động hoặc yên tâm. Có cả hai lớp → No-Decision lý do `ambiguous`. Không lớp nào → No-Decision lý do `conflict`. Thiếu tín hiệu dùng được → No-Decision lý do `quality`.
+- Đảm bảo: P(báo động | đối chứng) ≤ α và P(yên tâm | stroke) ≤ α, với điều kiện bệnh nhân exchangeable và đã qua cổng chất lượng.
+
+**Bối cảnh đánh giá:**
+- Model Riemann đang triển khai, chạy trên **nguồn chưa thấy, có khớp trạng thái mắt**. S1: 24 IS + 50 NS. S2: 50 IS + 50 NS.
+- Mô phỏng calibration tại chỗ: chia ngẫu nhiên một nửa bệnh nhân làm calib, nửa còn lại làm test, lặp 2000 lần.
+
+**Kết quả (2026-11-16):**
+
+| Split, α | FAR conformal | FAR heuristic 0.8/0.2 | FAR khi calib theo cửa sổ, báo nếu bất kỳ cửa sổ nào | Độ nhạy | Ca IS rơi vào No-Decision |
+|---|---|---|---|---|---|
+| S1, 0.10 | 0.077 | 0.299 | 0.281 | 0.29 | 64% |
+| S1, 0.20 | 0.191 | 0.299 | 0.471 | 0.57 | 29% |
+| S2, 0.10 | 0.076 | 0.160 | 0.242 | 0.21 | 71% |
+| S2, 0.20 | 0.186 | 0.160 | 0.516 | 0.67 | 15% |
+
+- **Đảm bảo đứng vững** ở mọi split và mọi α, tức FAR trung bình ≤ α. Theo quy tắc bỏ hướng: giữ R2, được gọi là "guarantee".
+- **Heuristic hiện tại không kiểm soát được FAR**: S1 là 0.30, vượt cả α = 0.2.
+- **Calib theo cửa sổ rồi báo động khi có bất kỳ cửa sổ nào vượt ngưỡng làm vỡ đảm bảo** (FAR 0.24–0.52). Đây là bằng chứng trên dữ liệu thật rằng phải calibrate ở mức bệnh nhân. Hệ quả cho chế độ streaming: phải quyết định trên điểm gộp của cả phiên đo, không quyết định theo từng cửa sổ.
+- **Cái giá:** với AUC khoảng 0.8 và chỉ 12–25 bệnh nhân calib mỗi lớp, α = 0.1 đẩy 64–71% ca IS vào No-Decision. α = 0.05 gần như không bao giờ quyết định. α là một **tham số thiết kế tương tác** (đánh đổi giữa FAR và tỉ lệ No-Decision), và giao diện phải cho thấy đánh đổi đó.
+- **Liên hệ C5:** hầu hết ca IS bị giữ lại nằm ở No-Decision chứ không bị báo là bình thường (miss ≤ α). Vì vậy cách diễn đạt No-Decision ("chưa biết ≠ bình thường", kèm hành động tiếp theo) là chỗ quyết định có bỏ sót bệnh nhân hay không. Đây đúng là câu hỏi Jabbour 2025 đặt ra.
+
+**Hạn chế:**
+- Trong mỗi split, ca IS và ca NS vẫn đến từ các nguồn khác nhau (NS là physionet_eo), nên khả năng phân biệt của model một phần vẫn đến từ khác biệt nguồn.
+- Đảm bảo FAR chỉ áp dụng cho quần thể đối chứng đó.
+- Chưa có cổng chất lượng SQI v2 trong lượt chạy này. Sẽ thêm sau khi ngưỡng drift được chỉnh trên TUAR.
