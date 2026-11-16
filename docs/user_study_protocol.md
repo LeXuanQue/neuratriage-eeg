@@ -195,8 +195,8 @@ Jabbour et al. (2025, N = 259 bác sĩ) cho thấy khi AI từ chối trả lờ
 | Giao diện điều kiện G: điểm từng kênh + lý do + lời khuyên trong `screen-live.jsx` | Xong 2026-11-16: `ChannelQualityPanel`, message WS `channel_quality` (`app/services/channel_quality.py`) |
 | Chế độ thí nghiệm: chọn điều kiện B/G, ẩn mọi gợi ý điều kiện nào là mới | Xong 2026-11-17: `app.html?participant=P07&condition=B&trial=1&source=device`. Ẩn sidebar và tweaks; badge góc chỉ hiện mã và số lượt, không hiện điều kiện; tự mở màn hình theo dõi và bắt đầu luồng (`source=replay` để pilot) |
 | Log sự kiện có timestamp ISO 8601: điểm SQI, thay đổi trạng thái, đánh dấu của người điều phối | Xong 2026-11-17: `POST /api/study/events` → `data/study_logs/P07.jsonl` (gitignored, mã bắt buộc dạng `P\d{2,3}`). Tự ghi mỗi tin chất lượng (~1 Hz, kèm lời khuyên đang hiện). Phím tắt cho người điều phối: Ctrl+Shift+S bắt đầu lượt, E kết thúc lượt (tăng số lượt), A người đo vừa sửa, R lỗi đã hết. **Tải lại trang thì số lượt lấy lại từ URL**, nên mỗi lượt mới phải đặt `trial=` đúng |
-| Lưu bản ghi thô theo mã người tham gia để người chấm đọc mù | Chưa làm |
-| Công cụ chấm từng đoạn 10 s cho người chấm, không hiện điều kiện | Chưa làm |
+| Lưu bản ghi thô theo mã người tham gia để người chấm đọc mù | Xong 2026-11-17: mỗi phiên WS ở chế độ study → `data/study_logs/raw/<hex ngẫu nhiên>.npz`. Bảng đối chiếu id → người tham gia/điều kiện/giờ bắt đầu ở `raw_key.jsonl`, người chấm **không** được xem |
+| Công cụ chấm từng đoạn 10 s cho người chấm, không hiện điều kiện | Xong 2026-11-17: `scripts/study_rating.py prepare` cắt đoạn 10 s, xáo trộn giữa bản ghi và điều kiện, vẽ PNG với trục dọc cố định theo bản ghi (để đoạn phẳng hay trôi nền hiện đúng bản chất), tạo `ratings_template.csv`. Sau khi chấm: `score --ratings r1.csv [--ratings2 r2.csv]` → TTU từng lượt, có cắt ở 8 phút, và Cohen's κ → `results/study1_ttu.csv` |
 | Tình huống giả định và màn hình đầu ra AI (Study 2) | Chưa làm, cần cố vấn lâm sàng |
 | Nền tảng khảo sát online cho Study 2 | Chọn theo trường |
 
