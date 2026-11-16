@@ -94,7 +94,13 @@ Study~2 tests whether an actionable framing of No-Decision avoids the under-tria
 \label{sec:lessons}
 
 \paragraph{Data.}
-We pooled two public ischemic-stroke cohorts and two public healthy-control cohorts \TODO{cite and describe the four datasets: sources, devices, montage, eye state, ages}, re-referenced to a common 18-channel montage, and evaluated at the patient level.
+We pooled two public stroke cohorts and two public healthy-control cohorts, all openly licensed.
+\emph{Xuanwu}~\cite{dataset_xuanwu}: 50 patients with acute ischemic stroke (1--30 days after onset, aged 30--77), recorded during a hand motor-imagery task.
+\emph{Tianjin}~\cite{dataset_tianjin}: 24 patients with \emph{chronic} stroke (15 ischemic, 9 hemorrhagic; the per-patient type is not published), Neuracle 64-channel system; we used the rest segments of the first pre-intervention run.
+\emph{Oslo}~\cite{dataset_oslo}: healthy adults, BioSemi 64-channel system, four minutes of eyes-closed rest.
+\emph{PhysioNet}~\cite{dataset_eegmmidb,schalk2004,goldberger2000}: healthy adults, BCI2000 64-channel system, the one-minute eyes-open and eyes-closed baselines.
+Every recording was resampled to 256\,Hz, reduced to a common 18-channel 10--20 montage, and evaluated at the patient level.
+The cohorts therefore differ in device, task, eye state and stroke phase as well as in diagnosis; the rest of this section measures how much of the apparent signal each of those differences carries.
 
 \paragraph{The confound.}
 With patient-level cross-validation on 50 stroke and 50 control recordings, entropy features alone reached an AUC of 0.904. Five signal-quality features alone---flatline, clipping, line-noise and high-frequency ratios---reached 0.999, and every stroke recording came from a different device than every control.
