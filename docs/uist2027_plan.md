@@ -22,6 +22,8 @@ UIST chấm điểm hệ thống và kỹ thuật tương tác kèm đánh giá 
 
 **Không claim:** độ chính xác chẩn đoán stroke, đặc biệt trên headband 2 kênh; "validated"; số 0.99.
 
+Dàn ý paper và bản đồ claim → bằng chứng: `docs/paper_outline.md`.
+
 ## 2. Lịch 20 tuần
 
 | Tuần (bắt đầu) | Việc | Cổng |

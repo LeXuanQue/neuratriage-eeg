@@ -12,7 +12,15 @@ Compared, all with patient-level statistics (patients = TUH subject prefix):
   handicapped);
 * per artifact type (eyem, musc, chew, shiv, elpp, ...): the same out-of-fold learned scores,
   restricted to clean windows plus that type;
-* window level (any channel artifact vs all channels clean), fixed rules.
+* window level (any channel artifact vs all channels clean), fixed rules;
+* E7: on artifact channel-windows, whether the first SQI v2 reason names the right
+  artifact type (musc/chew/shiv -> muscle, eyem -> transient/drift, elec/elpp -> contact);
+* E8: in windows with both artifact and clean channels, whether the lowest-scoring channel
+  (the one the interface tells the operator to fix) is an artifact channel, vs chance and v1.
+
+Windows that contain any artifact keep every labelled channel (needed for E8); clean-only
+windows keep a random ``--keep-clean`` share. Clean rows are therefore over-represented
+from windows next to artifacts; this affects v1 and v2 equally (paired comparison).
 
 v1 is computed as deployed: ``preprocess_eeg_for_sqi`` on the whole record (MAD clipping,
 detrend, notch), then ``compute_sqi`` averaged over 1 s sub-windows. At channel level v1 sees
@@ -199,15 +207,92 @@ def calibrate_drift_ramp(df, quantile: float = DRIFT_QUANTILE) -> Tuple[float, f
     return start, start + DRIFT_RAMP_WIDTH, DRIFT_WEIGHT
 
 
-def rescore(df, config) -> np.ndarray:
-    """v2 channel scores recomputed from cached features under ``config``."""
+def rescore_with_reasons(df, config) -> Tuple[np.ndarray, np.ndarray]:
+    """v2 channel scores and first reason ('' if none) recomputed from cached features."""
     import sqi_v2
 
     scores = np.empty(len(df))
+    reasons = np.empty(len(df), dtype=object)
     for i, row in enumerate(df[list(V2_SIGNAL_FEATURES) + ["v2_flat"]].itertuples(index=False)):
         rec = row._asdict()
-        scores[i] = 0.0 if rec.pop("v2_flat") else sqi_v2.score_features(rec, config)[0]
-    return scores
+        if rec.pop("v2_flat"):
+            scores[i], reasons[i] = 0.0, "flat"
+            continue
+        score, why = sqi_v2.score_features(rec, config)
+        scores[i], reasons[i] = score, (why[0] if why else "")
+    return scores, reasons.astype(str)
+
+
+def rescore(df, config) -> np.ndarray:
+    """v2 channel scores recomputed from cached features under ``config``."""
+    return rescore_with_reasons(df, config)[0]
+
+
+# --------------------------------------------------------------------------- E7/E8: guidance checks
+# Which SQI v2 reasons are a correct description of each TUAR artifact type. Electrode
+# artifacts (elec, elpp) show up as lost contact, pops or slow wander, so several fit.
+_KIND_REASONS = {
+    "musc": {"muscle"}, "chew": {"muscle"}, "shiv": {"muscle"},
+    "eyem": {"transient", "drift"},
+    "elec": {"flat", "drift", "transient", "clipping", "missing"},
+    "elpp": {"flat", "drift", "transient", "clipping", "missing"},
+}
+
+
+def select_channels(labels: np.ndarray, keep_clean: float, rng: np.random.Generator) -> Tuple[np.ndarray, bool]:
+    """Channels to store for one window, and whether the window is stored complete.
+
+    Windows with any artifact keep every labelled channel (needed to check which channel the
+    interface points at, E8). Clean-only windows are subsampled to keep the cache small.
+    """
+    labels = np.asarray(labels)
+    valid = np.flatnonzero(labels >= 0)
+    if (labels == 1).any() or not keep_clean:
+        return valid, True
+    return valid[rng.random(valid.size) < keep_clean], False
+
+
+def expected_reasons(kind: str) -> frozenset:
+    """Reasons that correctly describe a (possibly combined, e.g. 'eyem_musc') TUAR label."""
+    out: set = set()
+    for part in str(kind).split("_"):
+        out |= _KIND_REASONS.get(part, set())
+    return frozenset(out)
+
+
+def reason_accuracy(kinds: np.ndarray, reasons: np.ndarray) -> dict:
+    """E7: on artifact channel-windows, how often a reason is shown and whether it is right."""
+    kinds, reasons = np.asarray(kinds, dtype=str), np.asarray(reasons, dtype=str)
+    flagged = reasons != ""
+    correct = np.array([r in expected_reasons(k) for k, r in zip(kinds, reasons)])
+    confusion: dict = {}
+    for k, r in zip(kinds, reasons):
+        row = confusion.setdefault(k, {})
+        row[r or "none"] = row.get(r or "none", 0) + 1
+    return {
+        "n": int(kinds.size),
+        "flagged_share": float(flagged.mean()) if kinds.size else float("nan"),
+        "correct_among_flagged": float(correct[flagged].mean()) if flagged.any() else float("nan"),
+        "confusion": confusion,
+    }
+
+
+def localization(df, score_col: str) -> dict:
+    """E8: in complete windows with both artifact and clean channels, is the lowest-scoring
+    channel (the one the interface tells the operator to fix) an artifact channel?"""
+    hits, chances, pids = [], [], []
+    for _, g in df[df["full_window"] == 1].groupby(["rec", "window"]):
+        if g["label"].nunique() < 2:
+            continue
+        hits.append(float(g.loc[g[score_col].idxmin(), "label"] == 1))
+        chances.append(float(g["label"].mean()))
+        pids.append(g["pid"].iloc[0])
+    return {
+        "n_windows": len(hits),
+        "hit_rate": float(np.mean(hits)) if hits else float("nan"),
+        "chance": float(np.mean(chances)) if chances else float("nan"),
+        "_hits": np.array(hits), "_chances": np.array(chances), "_pids": np.array(pids),
+    }
 
 
 # --------------------------------------------------------------------------- statistics
@@ -330,11 +415,8 @@ def extract_recording(args: Tuple[str, str, float, int]) -> dict:
     rng = np.random.default_rng(seed)
     rows = []
     for w in range(n_win):
-        wanted = [
-            c for c, ch in enumerate(labels)
-            if per_ch[ch][0][w] == 1 or (per_ch[ch][0][w] == 0 and (not keep_clean or rng.random() < keep_clean))
-        ]
-        if not wanted:
+        wanted, full = select_channels(np.array([per_ch[ch][0][w] for ch in labels]), keep_clean, rng)
+        if not wanted.size:
             continue
         sl = slice(w * step, w * step + win)
         quality = sqi_v2.assess_window(data[:, sl], FS, channel_names=labels, config=v2_cfg)
@@ -343,7 +425,8 @@ def extract_recording(args: Tuple[str, str, float, int]) -> dict:
             ch, cq = labels[c], quality.channels[c]
             rows.append({
                 "rec": edf_path.stem, "pid": patient_id(edf_path.stem), "montage": edf_path.parent.name,
-                "channel": ch, "window": w, "label": int(per_ch[ch][0][w]), "kind": per_ch[ch][1][w],
+                "channel": ch, "window": w, "full_window": int(full),
+                "label": int(per_ch[ch][0][w]), "kind": per_ch[ch][1][w],
                 "win_label": _window_label(per_ch, labels, w), "v1_window": v1_window, "v2_window": quality.score,
                 "v2_score": cq.score, "v2_flat": int(bool({"flat", "missing"} & set(cq.reasons))),
                 **_v1_channel(v1_input[c, sl], cfg),
@@ -453,6 +536,36 @@ def main() -> None:
     print(json.dumps(result, indent=2))
 
 
+def _patient_mean_ci(pids: np.ndarray, values: np.ndarray, n_boot: int, seed: int) -> Tuple[float, float]:
+    """95% CI of a mean over windows, resampling patients."""
+    rng = np.random.default_rng(seed)
+    groups = [np.flatnonzero(pids == p) for p in np.unique(pids)]
+    if not groups:
+        return float("nan"), float("nan")
+    means = [
+        float(values[np.concatenate([groups[k] for k in rng.integers(0, len(groups), len(groups))])].mean())
+        for _ in range(n_boot)
+    ]
+    lo, hi = np.percentile(means, [2.5, 97.5])
+    return float(lo), float(hi)
+
+
+def _localization_report(test, n_boot: int, seed: int) -> dict:
+    """E8 for v2 (calibrated) and v1 on the same windows, with patient-bootstrap CIs."""
+    v2, v1 = localization(test, "v2_score"), localization(test, "v1_total")
+    out: dict = {"n_windows": v2["n_windows"], "chance": v2["chance"]}
+    if not v2["n_windows"]:
+        return out
+    pids = v2["_pids"]
+    for name, loc in (("v2", v2), ("v1", v1)):
+        out[name] = {
+            "hit_rate": loc["hit_rate"],
+            "hit_minus_chance_ci95": list(_patient_mean_ci(pids, loc["_hits"] - loc["_chances"], n_boot, seed)),
+        }
+    out["v2_minus_v1_ci95"] = list(_patient_mean_ci(pids, v2["_hits"] - v1["_hits"], n_boot, seed))
+    return out
+
+
 def calibrate_then_evaluate(df, calibration_path: Path, n_boot: int, seed: int) -> dict:
     """Fit the drift ramp on the calibration half, freeze it to disk, evaluate on the test half."""
     import sqi_v2
@@ -473,10 +586,16 @@ def calibrate_then_evaluate(df, calibration_path: Path, n_boot: int, seed: int) 
         test["pid"].to_numpy(), test["label"].to_numpy(),
         1 - test["v1_total"].to_numpy(), 1 - test["v2_score"].to_numpy(), n_boot, seed,
     )
-    test = test.assign(v2_score=rescore(test, sqi_v2.config_from_dict({"drift_ramp": list(ramp), "line_freq": TUH_LINE_FREQ})))
+    scores, reasons = rescore_with_reasons(
+        test, sqi_v2.config_from_dict({"drift_ramp": list(ramp), "line_freq": TUH_LINE_FREQ})
+    )
+    test = test.assign(v2_score=scores, v2_reason=reasons)
     result = evaluate(test, n_boot, seed)
+    artifacts = test[test["label"] == 1]
     return {
         **result,
+        "reason_accuracy_e7": reason_accuracy(artifacts["kind"].to_numpy(), artifacts["v2_reason"].to_numpy()),
+        "localization_e8": _localization_report(test, n_boot, seed),
         "evaluated_on": "TUAR test half (patients disjoint from calibration)",
         "calibration": frozen,
         "channel_fixed_default_config": _result_dict(default_fixed),

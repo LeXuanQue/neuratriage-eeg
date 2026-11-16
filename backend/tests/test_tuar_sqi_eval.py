@@ -191,6 +191,96 @@ def test_rescore_applies_a_calibrated_config() -> None:
     assert loose[1] == strict[1] == 0.0  # flat stays flat
 
 
+# --------------------------------------------------------------------- E7/E8: reasons and localization
+@pytest.mark.unit
+def test_select_channels_keeps_every_channel_when_a_window_has_an_artifact() -> None:
+    labels = np.array([0, 1, 0, -1, 0])
+    idx, full = E.select_channels(labels, keep_clean=0.01, rng=np.random.default_rng(0))
+    assert full is True
+    assert idx.tolist() == [0, 1, 2, 4]  # ambiguous channel never kept
+
+
+@pytest.mark.unit
+def test_select_channels_subsamples_clean_only_windows() -> None:
+    labels = np.zeros(200, dtype=int)
+    idx, full = E.select_channels(labels, keep_clean=0.25, rng=np.random.default_rng(1))
+    assert full is False
+    assert 25 <= idx.size <= 75
+
+
+@pytest.mark.unit
+def test_select_channels_keep_all_when_keep_clean_is_zero() -> None:
+    idx, full = E.select_channels(np.zeros(5, dtype=int), keep_clean=0.0, rng=np.random.default_rng(2))
+    assert full is True and idx.size == 5
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "kind, expected",
+    [
+        ("musc", {"muscle"}),
+        ("chew", {"muscle"}),
+        ("eyem", {"transient", "drift"}),
+        ("eyem_musc", {"transient", "drift", "muscle"}),
+        ("elec", {"flat", "drift", "transient", "clipping", "missing"}),
+    ],
+)
+def test_expected_reasons_for_tuar_kinds(kind: str, expected: set) -> None:
+    assert E.expected_reasons(kind) == frozenset(expected)
+
+
+@pytest.mark.unit
+def test_reason_accuracy_counts_flags_and_matches() -> None:
+    kinds = np.array(["musc", "musc", "eyem", "elec"])
+    reasons = np.array(["muscle", "", "muscle", "flat"])
+    r = E.reason_accuracy(kinds, reasons)
+    assert r["flagged_share"] == pytest.approx(0.75)
+    assert r["correct_among_flagged"] == pytest.approx(2 / 3)
+    assert r["confusion"]["eyem"]["muscle"] == 1
+
+
+@pytest.mark.unit
+def test_localization_hits_when_lowest_score_is_an_artifact_channel() -> None:
+    import pandas as pd
+
+    df = pd.DataFrame({
+        "rec": ["r1"] * 4 + ["r2"] * 4,
+        "pid": ["p1"] * 4 + ["p2"] * 4,
+        "window": [0] * 4 + [0] * 4,
+        "full_window": 1,
+        "label": [0, 1, 0, 0, 1, 0, 0, 0],
+        "score": [0.9, 0.2, 0.8, 0.95, 0.9, 0.1, 0.8, 0.7],  # r1 hit, r2 miss
+    })
+    loc = E.localization(df, "score")
+    assert loc["n_windows"] == 2
+    assert loc["hit_rate"] == pytest.approx(0.5)
+    assert loc["chance"] == pytest.approx(0.25)
+
+
+@pytest.mark.unit
+def test_localization_skips_partial_and_single_label_windows() -> None:
+    import pandas as pd
+
+    df = pd.DataFrame({
+        "rec": ["r1", "r1", "r2", "r2"], "pid": ["p1", "p1", "p2", "p2"], "window": [0, 0, 0, 0],
+        "full_window": [0, 0, 1, 1], "label": [0, 1, 1, 1], "score": [0.1, 0.9, 0.2, 0.3],
+    })
+    assert E.localization(df, "score")["n_windows"] == 0
+
+
+@pytest.mark.unit
+def test_rescore_with_reasons_returns_first_reason() -> None:
+    import pandas as pd
+    import sqi_v2
+
+    row = {k: 0.0 for k in E.V2_SIGNAL_FEATURES}
+    row.update({"aperiodic_exponent": 1.5, "aperiodic_r2": 0.95, "drift_excess": 3.0, "v2_flat": 0})
+    df = pd.DataFrame([row, {**row, "drift_excess": 0.0}, {**row, "v2_flat": 1}])
+    scores, reasons = E.rescore_with_reasons(df, sqi_v2.SqiV2Config())
+    assert reasons.tolist() == ["drift", "", "flat"]
+    assert scores[2] == 0.0
+
+
 # --------------------------------------------------------------------- statistics
 @pytest.mark.unit
 def test_grouped_cv_handles_fewer_patients_than_folds() -> None:
