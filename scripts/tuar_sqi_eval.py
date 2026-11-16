@@ -45,7 +45,7 @@ import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Sequence, Tuple
+from typing import Callable, List, Optional, Sequence, Tuple
 
 import numpy as np
 
@@ -475,15 +475,52 @@ def evaluate(df, n_boot: int, seed: int) -> dict:
     }
 
 
-def _extract_all(root: Path, cache: Path, keep_clean: float, limit: int, workers: int, seed: int) -> None:
+def parse_rsync_listing(text: str) -> dict:
+    """{relative path: size in bytes} from an ``rsync --list-only`` listing (files only)."""
+    sizes = {}
+    for line in text.splitlines():
+        parts = line.split(None, 4)
+        if len(parts) == 5 and parts[0].startswith("-"):
+            sizes[parts[4].strip()] = int(parts[1].replace(",", ""))
+    return sizes
+
+
+def complete_edfs(root: Path, sizes: dict) -> List[Path]:
+    """EDFs that exist locally with exactly the size the server lists (fully downloaded)."""
+    out = []
+    for p in sorted((root / "edf").glob("*/*.edf")):
+        rel = p.relative_to(root).as_posix()
+        if rel in sizes and p.stat().st_size == sizes[rel]:
+            out.append(p)
+    return out
+
+
+def rec_seed(rec_name: str, base: int) -> int:
+    """Subsampling seed from the recording name, so results do not depend on run order."""
+    import hashlib
+
+    return int(hashlib.sha256(f"{base}:{rec_name}".encode()).hexdigest()[:8], 16)
+
+
+def _extract_all(root: Path, cache: Path, keep_clean: float, limit: int, workers: int, seed: int,
+                 sizes: Optional[dict] = None, resume: bool = False) -> None:
     from concurrent.futures import ProcessPoolExecutor
 
     import pandas as pd
 
-    edfs = sorted((root / "edf").glob("*/*.edf"))[: limit or None]
+    edfs = complete_edfs(root, sizes) if sizes else sorted((root / "edf").glob("*/*.edf"))
+    previous = pd.DataFrame()
+    if resume and cache.exists():
+        previous = pd.read_csv(cache)
+        done = set(previous["rec"].astype(str))
+        edfs = [e for e in edfs if e.stem not in done]
+        print(f"resume: {len(done)} recordings already cached, {len(edfs)} to extract", flush=True)
+    edfs = edfs[: limit or None]
     if not edfs:
-        raise SystemExit(f"no EDF files under {root / 'edf'}")
-    jobs = [(str(e), str(root), keep_clean, seed + i) for i, e in enumerate(edfs)]
+        if previous.empty:
+            raise SystemExit(f"no EDF files under {root / 'edf'}")
+        return
+    jobs = [(str(e), str(root), keep_clean, rec_seed(e.stem, seed)) for e in edfs]
     rows: list = []
     log: list = []
     with ProcessPoolExecutor(workers) as pool:
@@ -493,7 +530,13 @@ def _extract_all(root: Path, cache: Path, keep_clean: float, limit: int, workers
             note = f" ERROR {out['error']}" if out["error"] else ""
             print(f"[{i}/{len(jobs)}] {out['rec']} rows={len(rows)}{note}", flush=True)
     cache.parent.mkdir(parents=True, exist_ok=True)
-    pd.DataFrame(rows).to_csv(cache, index=False)
+    pd.concat([previous, pd.DataFrame(rows)], ignore_index=True).to_csv(cache, index=False)
+    log_path = cache.with_suffix(".log.json")
+    if resume and log_path.exists():
+        # failed recordings are not in the cache, so they are retried; keep the latest entry
+        merged = {r["rec"]: r for r in json.loads(log_path.read_text(encoding="utf-8"))["recordings"]}
+        merged.update({r["rec"]: r for r in log})
+        log = list(merged.values())
     n_events = sum(r["n_events"] for r in log)
     n_unmatched = sum(r["n_unmatched"] for r in log)
     report = {
@@ -523,11 +566,18 @@ def main() -> None:
     ap.add_argument("--n-boot", type=int, default=2000)
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--eval-only", action="store_true")
+    ap.add_argument("--sizes", help="rsync --list-only listing: extract only fully downloaded EDFs")
+    ap.add_argument("--resume", action="store_true", help="keep the cache and extract only new recordings")
+    ap.add_argument("--extract-only", action="store_true", help="update the cache without evaluating")
     args = ap.parse_args()
 
     cache = Path(args.cache)
     if not args.eval_only:
-        _extract_all(Path(args.tuar_root), cache, args.keep_clean, args.limit, args.workers, args.seed)
+        sizes = parse_rsync_listing(Path(args.sizes).read_text(encoding="utf-8")) if args.sizes else None
+        _extract_all(Path(args.tuar_root), cache, args.keep_clean, args.limit, args.workers, args.seed,
+                     sizes=sizes, resume=args.resume)
+        if args.extract_only:
+            return
     df = pd.read_csv(cache)
     df["kind"] = df["kind"].fillna("")
     df = df[df["label"] >= 0].reset_index(drop=True)

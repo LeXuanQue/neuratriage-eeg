@@ -342,3 +342,39 @@ def test_grouped_cv_scores_never_train_on_the_test_patient() -> None:
     assert len(seen) == len(folds) == 5
     for train_idx, test_idx in folds:
         assert not set(pids[train_idx]) & set(pids[test_idx])
+
+
+# --------------------------------------------------------------------- incremental extraction
+LISTING = """drwxrwxr-x              6 2026/01/20 11:16:08 .
+-rwxrwxr-x          1,168 2022/12/02 11:29:09 edf/01_tcp_ar/aaaaaaju_s005_t000.csv
+-rwxrwxr-x     23,811,124 2024/02/23 09:46:06 edf/01_tcp_ar/aaaaaaju_s005_t000.edf
+-rwxrwxr-x             10 2024/02/23 09:48:22 edf/02_tcp_le/bbbbbbbb_s001_t000.edf
+"""
+
+
+@pytest.mark.unit
+def test_parse_rsync_listing_reads_sizes_with_thousands_separators() -> None:
+    sizes = E.parse_rsync_listing(LISTING)
+    assert sizes["edf/01_tcp_ar/aaaaaaju_s005_t000.edf"] == 23811124
+    assert sizes["edf/02_tcp_le/bbbbbbbb_s001_t000.edf"] == 10
+    assert "." not in sizes
+
+
+@pytest.mark.unit
+def test_complete_edfs_keeps_only_fully_downloaded_files(tmp_path: Path) -> None:
+    d = tmp_path / "edf" / "02_tcp_le"
+    d.mkdir(parents=True)
+    (d / "bbbbbbbb_s001_t000.edf").write_bytes(b"x" * 10)           # complete
+    (d / "cccccccc_s001_t000.edf").write_bytes(b"x" * 3)            # not in listing
+    partial = tmp_path / "edf" / "01_tcp_ar"
+    partial.mkdir(parents=True)
+    (partial / "aaaaaaju_s005_t000.edf").write_bytes(b"x" * 100)    # still downloading
+    got = E.complete_edfs(tmp_path, E.parse_rsync_listing(LISTING))
+    assert [p.name for p in got] == ["bbbbbbbb_s001_t000.edf"]
+
+
+@pytest.mark.unit
+def test_rec_seed_depends_on_the_recording_not_the_run_order() -> None:
+    assert E.rec_seed("aaaaaaju_s005_t000", 0) == E.rec_seed("aaaaaaju_s005_t000", 0)
+    assert E.rec_seed("aaaaaaju_s005_t000", 0) != E.rec_seed("aaaaaaju_s007_t000", 0)
+    assert E.rec_seed("aaaaaaju_s005_t000", 0) != E.rec_seed("aaaaaaju_s005_t000", 1)
