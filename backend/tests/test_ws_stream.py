@@ -170,6 +170,85 @@ def test_ws_stream_sends_per_channel_quality_for_client_data() -> None:
     assert last["guidance"]["channel"] == "AF4"
 
 
+def test_ws_stream_records_raw_signal_for_a_study_session(tmp_path, monkeypatch) -> None:
+    """Study 1: a study init block makes the server keep the raw signal under an opaque id."""
+    import json as _json
+
+    monkeypatch.setattr(get_settings(), "study_log_dir", str(tmp_path))
+    rng = np.random.default_rng(3)
+    session_id = uuid.uuid4().hex
+    with TestClient(app) as client:
+        token = _token(client)
+        with client.websocket_connect(f"/ws/stream/{session_id}?token={token}") as ws:
+            ws.send_json({"type": "init", "device_channels": ["AF3", "AF4"], "fs": 256,
+                          "study": {"participant": "P07", "trial": 1, "condition": "B"}})
+            assert ws.receive_json()["type"] == "ready"
+            for _ in range(3):
+                ws.send_json({"type": "data", "chunk": rng.normal(scale=20e-6, size=(2, 256)).tolist()})
+            ws.send_json({"type": "close"})
+            while True:
+                try:
+                    ws.receive_json()
+                except Exception:
+                    break
+
+    key = [_json.loads(x) for x in (tmp_path / "raw_key.jsonl").read_text(encoding="utf-8").splitlines()]
+    assert len(key) == 1 and key[0]["participant"] == "P07" and key[0]["condition"] == "B"
+    raw = np.load(tmp_path / "raw" / f"{key[0]['raw_id']}.npz")
+    assert raw["data"].shape == (2, 768)
+
+
+def test_ws_stream_records_a_study_replay_session(tmp_path, monkeypatch) -> None:
+    """Pilots run on server-driven replay: those sessions must be recorded too."""
+    import json as _json
+
+    from app.services.replay_cases import list_replay_cases
+
+    cases = list_replay_cases()
+    if not cases:
+        pytest.skip("No replay .npz cases available")
+    case_id = min(cases, key=lambda c: c.get("size_bytes", 0))["id"]
+    monkeypatch.setattr(get_settings(), "study_log_dir", str(tmp_path))
+    with TestClient(app) as client:
+        token = _token(client)
+        with client.websocket_connect(f"/ws/stream/{uuid.uuid4().hex}?token={token}") as ws:
+            ws.send_json({"type": "init", "device_channels": ["AF3", "AF4"], "fs": 256,
+                          "replay_npz": case_id, "realtime": False,
+                          "study": {"participant": "P07", "trial": 2, "condition": "G"}})
+            assert ws.receive_json()["type"] == "ready"
+            while True:
+                msg = ws.receive_json()
+                if msg.get("type") in ("replay_done", "error"):
+                    break
+            ws.send_json({"type": "close"})
+            while True:
+                try:
+                    ws.receive_json()
+                except Exception:
+                    break
+
+    key = [_json.loads(x) for x in (tmp_path / "raw_key.jsonl").read_text(encoding="utf-8").splitlines()]
+    assert len(key) == 1 and key[0]["trial_at_start"] == 2
+    assert key[0]["n_samples"] > 256 * 10
+
+
+def test_ws_stream_records_nothing_without_a_study_block(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(get_settings(), "study_log_dir", str(tmp_path))
+    with TestClient(app) as client:
+        token = _token(client)
+        with client.websocket_connect(f"/ws/stream/{uuid.uuid4().hex}?token={token}") as ws:
+            ws.send_json({"type": "init", "device_channels": ["AF3", "AF4"], "fs": 256})
+            assert ws.receive_json()["type"] == "ready"
+            ws.send_json({"type": "data", "chunk": np.zeros((2, 256)).tolist()})
+            ws.send_json({"type": "close"})
+            while True:
+                try:
+                    ws.receive_json()
+                except Exception:
+                    break
+    assert not (tmp_path / "raw_key.jsonl").exists()
+
+
 def test_ws_stream_rejects_data_before_init() -> None:
     session_id = uuid.uuid4().hex
     with TestClient(app) as client:

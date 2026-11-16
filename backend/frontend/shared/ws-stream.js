@@ -220,6 +220,14 @@
         const initMsg = deviceMode
           ? { type: "init", source: "device", fs: FS }
           : { type: "init", device_channels: deviceChannelsRef.current, fs: FS };
+        // Study 1: the server keeps the raw signal under an opaque id for blinded rating.
+        if (window.NTStudy && window.NTStudy.active) {
+          initMsg.study = {
+            participant: window.NTStudy.participant,
+            trial: window.NTStudy.trial,
+            condition: window.NTStudy.condition,
+          };
+        }
         // A1: link session to patient on the backend
         if (patientId) {
           initMsg.patient_id = String(patientId);
