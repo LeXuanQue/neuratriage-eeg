@@ -1,0 +1,157 @@
+"""E11: does the patient-level conformal rule (R2) still hold behind the SQI v2 quality gate?
+
+Same setting as conformal_no_decision.py (Riemannian model trained on two sources, scored on
+two unseen eye-state-matched sources, on-site calibration by random patient halves), but a
+4 s window only counts when SQI v2 scores it usable (window score >= CHANNEL_OK, frozen TUAR
+drift threshold when results/sqi_v2_calibration.json exists). A patient without any usable
+window gets No-Decision (reason ``quality``) and is left out of calibration, as at deployment.
+
+Reported per split and alpha: FAR, miss and No-Decision shares on the test halves, how many
+patients and windows the gate removes per class, and whether mean FAR <= alpha + 0.02.
+
+Usage (after conformal_no_decision.py has cached the window probabilities)::
+
+    .venv/Scripts/python.exe scripts/conformal_quality_gate.py
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from pathlib import Path
+from typing import Sequence, Tuple
+
+import numpy as np
+import pandas as pd
+
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT / "backend"))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+import conformal_triage as C  # noqa: E402
+
+ALPHAS = (0.05, 0.10, 0.20)
+GUARANTEE_SLACK = 0.02
+WINDOW_CACHE = Path("F:/eeg_extra/cache_lso")
+SPLIT_SOURCES = {"S1": ("tianjin", "physionet_eo"), "S2": ("xuanwu", "physionet_eo")}
+
+# Mains frequency of the country each cohort was recorded in. PhysioNet eegmmidb (US) shows a
+# 60 Hz peak ~100x the background; the Chinese and Norwegian cohorts are 50 Hz.
+LINE_FREQ = {
+    "xuanwu": 50.0, "tianjin": 50.0, "oslo": 50.0, "oslo45": 50.0,
+    "physionet": 60.0, "physionet_eo": 60.0, "physionet_ec": 60.0, "tuh": 60.0,
+}
+
+
+def line_freq_for(source: str) -> float:
+    return LINE_FREQ[source]
+
+
+def usable_windows(windows: np.ndarray, fs: float, line_freq: float) -> np.ndarray:
+    """True where SQI v2 scores the whole window at or above CHANNEL_OK."""
+    import sqi_v2 as S
+    from sqi_v2_gate_check import make_config
+
+    cfg = make_config(line_freq)
+    return np.array([S.assess_window(np.asarray(w, float), fs, config=cfg).score >= S.CHANNEL_OK
+                     for w in windows], dtype=bool)
+
+
+def _patients(win: pd.DataFrame, usable: np.ndarray) -> Tuple[C.PatientScores, np.ndarray]:
+    agg = C.aggregate_patients(win["pid"].to_numpy(), win["p"].to_numpy(), valid=usable)
+    y = win.groupby("pid", sort=False)["y"].first().reindex(list(agg.pids)).to_numpy()
+    return agg, y
+
+
+def gated_states_once(win: pd.DataFrame, usable: np.ndarray, alpha: float,
+                      rng: np.random.Generator) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """One calibration/test draw: (states, labels, fully-gated mask) on the test half."""
+    agg, y = _patients(win, usable)
+    return _decide_draw(agg.scores, y, alpha, rng)
+
+
+def _decide_draw(p: np.ndarray, y: np.ndarray, alpha: float,
+                 rng: np.random.Generator) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    cal, test = C.stratified_half_split(y, rng)
+    thr = C.fit_thresholds(p[cal], y[cal], alpha_far=alpha, alpha_miss=alpha)  # ignores nan
+    states = np.array([C.decide(v, thr).state for v in p[test]])
+    return states, y[test], ~np.isfinite(p[test])
+
+
+def _summary(rows: Sequence[dict]) -> dict:
+    df = pd.DataFrame(list(rows))
+    return {m: {"mean": float(df[m].mean()), "p05": float(df[m].quantile(0.05)),
+                "p95": float(df[m].quantile(0.95))} for m in df.columns}
+
+
+def run_gated_split(win: pd.DataFrame, usable: np.ndarray, n_rep: int, seed: int,
+                    alphas: Sequence[float] = ALPHAS) -> dict:
+    usable = np.asarray(usable, dtype=bool)
+    agg, y = _patients(win, usable)
+    gone = ~np.isfinite(agg.scores)
+    yw = win["y"].to_numpy()
+    out: dict = {
+        "n_stroke": int(y.sum()), "n_control": int((y == 0).sum()),
+        "usable_window_share": {"control": float(usable[yw == 0].mean()), "stroke": float(usable[yw == 1].mean())},
+        "n_patients_without_usable_window": {"control": int((gone & (y == 0)).sum()),
+                                             "stroke": int((gone & (y == 1)).sum())},
+        "alphas": {},
+    }
+    for alpha in alphas:
+        rng = np.random.default_rng(seed)
+        rows = [C.decision_metrics(*_decide_draw(agg.scores, y, alpha, rng)[:2]) for _ in range(n_rep)]
+        conf = _summary(rows)
+        out["alphas"][str(alpha)] = {
+            "conformal": conf,
+            "guarantee_holds": bool(conf["far"]["mean"] <= alpha + GUARANTEE_SLACK),
+        }
+    return out
+
+
+def split_usable(split: str, win: pd.DataFrame) -> np.ndarray:
+    """SQI v2 usable mask for the cached window probabilities of one split (same order)."""
+    parts = []
+    for source in SPLIT_SOURCES[split]:
+        z = np.load(WINDOW_CACHE / f"{source}_cap24.npz", allow_pickle=True)
+        rows = win[win["source"] == source]
+        if len(rows) != len(z["windows"]) or not np.array_equal(rows["pid"].astype(str).to_numpy(),
+                                                                 z["pids"].astype(str)):
+            raise SystemExit(f"{split}/{source}: cached probabilities and windows are not aligned")
+        parts.append(usable_windows(z["windows"], 256.0, line_freq_for(source)))
+        print(f"[{split}] {source}: {parts[-1].mean():.1%} of {len(parts[-1])} windows usable", flush=True)
+    return np.concatenate(parts)
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    ap.add_argument("--splits", nargs="+", default=["S1", "S2"])
+    ap.add_argument("--n-rep", type=int, default=2000)
+    ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--out", default=str(ROOT / "results" / "conformal_quality_gate.json"))
+    args = ap.parse_args()
+
+    calib = ROOT / "results" / "sqi_v2_calibration.json"
+    report = {
+        "condition": "as conformal_no_decision.py, windows kept only if SQI v2 score >= CHANNEL_OK",
+        "drift_ramp_source": str(calib) if calib.exists() else "default (synthetic)",
+        "n_rep": args.n_rep, "drop_rule": f"guarantee_holds iff mean FAR <= alpha + {GUARANTEE_SLACK}",
+        "splits": {},
+    }
+    for split in args.splits:
+        win = pd.read_csv(ROOT / "results" / f"conformal_window_probs_{split}.csv")
+        win = win.sort_values("source", key=lambda s: s.map(SPLIT_SOURCES[split].index), kind="stable")
+        report["splits"][split] = run_gated_split(win.reset_index(drop=True), split_usable(split, win),
+                                                  args.n_rep, args.seed)
+    Path(args.out).write_text(json.dumps(report, indent=2), encoding="utf-8")
+    for split, r in report["splits"].items():
+        print(f"\n== {split}: usable windows {r['usable_window_share']}, "
+              f"patients removed {r['n_patients_without_usable_window']}")
+        for alpha, a in r["alphas"].items():
+            c = a["conformal"]
+            print(f"alpha={alpha}: FAR {c['far']['mean']:.3f} miss {c['miss']['mean']:.3f} "
+                  f"ND ctrl/stroke {c['no_decision_control']['mean']:.2f}/{c['no_decision_stroke']['mean']:.2f} "
+                  f"| holds={a['guarantee_holds']}")
+
+
+if __name__ == "__main__":
+    main()

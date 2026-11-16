@@ -91,7 +91,8 @@ def main() -> None:
 
     out: dict = {}
     out["IS"], is_scores = summarize(sorted((ROOT / "dataset_ischemic").glob("sub-*.npz")), 50.0)
-    out["NS"], ns_scores = summarize(sorted((ROOT / "dataset_healthy").glob("*.npz"))[:N_CONTROLS], 50.0)
+    # PhysioNet eegmmidb is a US rig: 60 Hz mains (peak ~100x background), not 50 Hz
+    out["NS"], ns_scores = summarize(sorted((ROOT / "dataset_healthy").glob("*.npz"))[:N_CONTROLS], 60.0)
     manifest = pd.read_csv(ROOT / "dataset_tuh" / "manifest_tuh.csv")
     for label, name in [(1, "TUSL_slow"), (0, "TUSL_bckg")]:
         paths = [ROOT / Path(p.replace("\\", "/")) for p in manifest.loc[manifest["label"] == label, "path"]]
