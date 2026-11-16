@@ -58,7 +58,7 @@ We contribute:
   \item \textbf{A real-time, device-agnostic triage system} that scores each EEG channel with a reason code and an operator action, and runs on a 2-channel consumer headband, an 8-channel research amplifier, or replayed clinical recordings (Section~\ref{sec:system}).
   \item \textbf{Actionable abstention}: patient-level class-conditional conformal prediction that turns No-Decision into a stated false-alert bound, with the abstention reason (ambiguous evidence vs.\ poor signal) shown to the user (Section~\ref{sec:conformal}).
   \item \textbf{A technical evaluation} on held-out recording sources showing that the bound holds where fixed thresholds and window-level calibration fail, how many patients on-site calibration needs, how long a recording must be, and \TODO{how well the per-channel reasons and target channel match labelled artifacts (TUAR)} (Section~\ref{sec:techeval}).
-  \item \textbf{Two user studies}: \TODO{novice operators acquiring EEG with per-channel guidance vs.\ a per-channel indicator only (Study~1), and clinicians deciding on vignettes with two framings of No-Decision (Study~2)}.
+  \item \textbf{Two user studies}: novice operators acquiring EEG with per-channel reasons and actions vs.\ a per-channel indicator only (Study~1), and clinicians deciding on vignettes under two wordings of No-Decision (Study~2) \TODO{one-line finding of each}.
 \end{itemize}
 
 %% ===================================================================================
@@ -230,13 +230,66 @@ On a 19\,s recording from the 2-channel headband whose first seconds were domina
 %% ===================================================================================
 \section{Study 1: Novice Acquisition}
 \label{sec:study1}
-\TODO{Method (from docs/user_study_protocol.md): 16 novice operators, 4 healthy wearers, within-subject, counterbalanced; condition B shows per-channel bars with OK/Poor only, condition G adds reason, action and target channel; three scripted faults per trial (dry electrode, loose band, jaw clench, mains noise); 8\,min limit.
-Primary outcome: time to 60\,s of usable signal rated by a blinded EEG reader on shuffled 10\,s epochs (second rater on 20\%, Cohen's $\kappa$); Wilcoxon signed-rank, Cox model with operator frailty as sensitivity analysis.
-Results, figures and qualitative findings once run.}
+Study~1 asks whether telling a novice \emph{why} a channel is poor and \emph{what to do} gets usable EEG faster than telling them only \emph{which} channel is poor.
+The analysis plan below is fixed before the first session \TODO{pre-register on OSF and link (anonymised) here}.
+
+\paragraph{Participants.}
+Sixteen operators who had never placed EEG electrodes (\TODO{demographics; how many were paramedics or nurses}) and four healthy wearers, all adults; each wearer was recorded by several operators.
+Sixteen operators give 80\% power for a paired effect of $d=0.8$ at $\alpha=0.05$ and fill both counterbalancing orders; two to three pilot operators, not counted, check the effect-size assumption \TODO{pilot outcome}.
+
+\paragraph{Conditions.}
+Both conditions used the same application, headband (2-channel, AF3/AF4, Bluetooth) and live trace.
+In \textbf{B}, every channel showed a quality bar and an OK/Poor label, the indicator found in clinical impedance checks and consumer headbands.
+In \textbf{G}, the same bars were joined by the \sqiv{} reason, one corrective action and the channel to fix first (Section~\ref{sec:sqi}).
+The only difference between conditions is therefore the reason and the action, which is the contribution under test.
+Operators were not told which condition was new.
+
+\paragraph{Task and faults.}
+Each trial started with three scripted faults drawn from four: a dry electrode, a loose band, a jaw clench held until the operator asked the wearer to relax, and a powered charger beside the device (mains noise).
+Both conditions used the same fault set in a different order.
+The instruction was ``obtain 60 seconds of good signal as fast as you can'' with an 8-minute limit, thinking aloud.
+Each operator did one trial per condition with a different wearer; condition order, wearer and fault set were balanced with a Latin square.
+After each trial operators completed NASA-TLX and SUS; a 10-minute semi-structured interview closed the session.
+
+\paragraph{Measures.}
+The primary outcome is time to usable signal (TTU): the start of the first run of 60\,s that an independent EEG reader rated usable, measured from the trial start marker.
+The application stored each raw recording under an opaque identifier; the reader rated shuffled 10\,s epochs, plotted at a fixed per-recording scale, without knowing operator, condition or time.
+A second reader rated 20\% of epochs (Cohen's $\kappa$).
+We did not use \sqiv{} itself as the outcome, since that would favour G.
+Secondary outcomes: success within 8 minutes, correct identification of the fault cause (coded from think-aloud by two coders), number of corrective actions (application log), NASA-TLX, SUS and trust~\cite{jian2000trust}.
+
+\paragraph{Analysis.}
+H1 (G shortens TTU): Wilcoxon signed-rank on paired TTU, trials without a usable run set to 8 minutes; sensitivity analysis with a Cox model with operator frailty, treating those trials as censored.
+Success: McNemar. Fault identification: logistic GLMM with operator and fault-type random intercepts. Effect sizes are reported with 95\% operator-level bootstrap intervals, and order effects are checked.
+
+\paragraph{Results.}
+\TODO{TTU by condition (paired plot), success, fault identification, NASA-TLX/SUS, $\kappa$, qualitative themes.}
 
 \section{Study 2: Framing No-Decision}
 \label{sec:study2}
-\TODO{Method: 40--60 clinicians/nurses/final-year students, 24 vignettes (12 stroke, 12 mimics), AI output within subject (none / alert / clear / No-Decision), framing between subjects (plain vs.\ actionable). Primary outcome: stroke-pathway activation on stroke vignettes with No-Decision; GLMM with participant and vignette random effects; non-inferiority vs.\ no AI (10-point margin). Results once run; requires a clinical advisor to validate vignettes.}
+The conformal rule rarely clears a stroke patient; it places them in No-Decision instead.
+When an AI declines to answer, clinicians can under-diagnose more than with no AI at all~\cite{jabbour2025}, so the wording of No-Decision decides whether the risk it holds becomes a missed stroke.
+Study~2 compares two wordings.
+
+\paragraph{Participants.}
+Emergency and neurology physicians, emergency nurses and final-year medical students; at least 40 (20 per framing), target 60 \TODO{actual N, roles, years of experience}.
+
+\paragraph{Materials.}
+Twenty-four pre-hospital vignettes, 12 strokes and 12 mimics (hypoglycaemia, post-ictal state, migraine with aura, Bell's palsy, \ldots), each with age, sex, time of onset, vital signs, a short NIHSS-style examination and the EEG system's output screen. A neurologist validates the reference answer and difficulty of each vignette before the study \TODO{clinical advisor not yet recruited; state their role once done}.
+Within subjects, every participant saw four output types: no AI (6 vignettes), alert (4; one wrong), clear (4; one wrong) and No-Decision (10; 5 strokes, 5 mimics). Four rotated lists paired each vignette with each output type across the sample.
+Between subjects, No-Decision was worded either \textbf{plain} (``Not certain enough to give a result'') or \textbf{actionable} (``Undetermined --- this does not mean normal. The signal cannot rule out stroke. Continue the standard stroke pathway. You may re-record after adjusting electrode AF4.''), with the reason (\texttt{ambiguous} or \texttt{quality}) in words and no probability~\cite{bondi2022}.
+
+\paragraph{Procedure and measures.}
+Online, about 25 minutes. For each vignette: activate the stroke pathway and transfer to a stroke centre (yes/no), confidence (1--7) and influence of the EEG result (1--7). At the end, participants explained in their own words what No-Decision meant. Two attention checks were excluded by a pre-registered rule.
+
+\paragraph{Analysis.}
+H5 (actionable wording raises activation on stroke vignettes with No-Decision): logistic GLMM, activation $\sim$ framing + (1\,|\,participant) + (1\,|\,vignette), stroke No-Decision vignettes only, reported as an odds ratio with 95\% CI.
+H6/H7: on stroke vignettes, output (no AI vs.\ No-Decision) $\times$ framing; H7 tests non-inferiority of actionable No-Decision against no AI with a 10-point margin fixed in advance.
+With 40 participants the study detects only large differences ($\approx$20 points), so we report effect sizes with intervals, not only $p$-values.
+The cost of the actionable wording is measured as activation on mimic vignettes with No-Decision.
+
+\paragraph{Results.}
+\TODO{Activation by framing and output type, mimic over-triage, confidence, coded meanings of No-Decision.}
 
 %% ===================================================================================
 \section{Discussion}
@@ -248,14 +301,15 @@ The same model and data give 8\% false alerts with 64--71\% of stroke patients w
 The conformal rule almost never clears a stroke patient, so the risk sits in No-Decision. Whether that risk becomes a missed stroke depends on how No-Decision is read~\cite{jabbour2025}; Study~2 measures this directly.
 
 \paragraph{Beyond stroke.}
-Nothing in the quality layer or the decision rule is specific to stroke. Per-channel guidance and patient-level abstention apply to any EEG triage task acquired by non-experts \TODO{e.g., point-of-care seizure screening; cite verified work if used}.
+Nothing in the quality layer or the decision rule is specific to stroke. Per-channel guidance and patient-level abstention apply to any EEG triage task acquired by non-experts, for example reduced-montage seizure screening in the emergency department, where rapid EEG systems already pair simplified acquisition with automated detection~\cite{richard2024rapideeg}.
 
 \paragraph{Limitations.}
 Our stroke and control recordings come from different public sources; even our most controlled split cannot separate pathology from acquisition completely, and we make no diagnostic claim.
 The 2-channel headband is used for quality and guidance only; classification uses 18-channel recordings.
 The conformal bound assumes exchangeable patients at the deployment site and is marginal over calibration draws.
 The drift threshold is calibrated on one clinical system \TODO{TUAR}.
-\TODO{Study limitations: student operators as proxies for paramedics; vignettes instead of patients.}
+Study~1 operators were mostly novices recruited on campus, a proxy for paramedics who work under time pressure in a moving vehicle; the scripted faults are common causes of poor contact but not an exhaustive set, and healthy wearers do not move, sweat or vomit like patients.
+Study~2 uses vignettes, not patients, so it measures stated decisions rather than actual transfers, and its sample detects only large framing effects.
 
 \section{Conclusion}
 \TODO{Two to three sentences once all results are in.}
