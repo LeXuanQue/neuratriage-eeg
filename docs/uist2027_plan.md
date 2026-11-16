@@ -50,6 +50,12 @@ Module riêng `backend/sqi_v2.py`. **Không thay `compute_sqi`**, vì model đan
 - **Ràng buộc bắt buộc:** slowing kiểu stroke (delta 1–4 Hz tăng, số mũ dốc hơn) **không** bị gate như drift. Có test tổng hợp ngay. Khi có dữ liệu thật, phải kiểm thêm rằng SQI v2 không gate IS nhiều hơn NS.
 - **Đánh giá trên TUAR:** AUC phát hiện artifact ở mức bệnh nhân, so v1 với v2, cả luật cố định lẫn bộ kết hợp logistic học trên fold train. Bỏ hướng này nếu v2 không hơn v1 ít nhất 0.05 AUC.
 
+### Kết quả R1 trên TUAR (2026-11-17)
+
+- **Luật bỏ hướng: đạt theo ước lượng điểm.** Model học trên đặc trưng v2 hơn v1 +0.081 AUC [0.048, 0.117]. Luật tay đang triển khai thì thua v1 (−0.035).
+- **Scorer học không triển khai được:** trượt kiểm tra an toàn E9 (gate 51% cửa sổ stroke, 0.3% control), kể cả biến thể bỏ đặc trưng trạng thái não. Tracker giữ luật tay, vốn đạt E9 và E11.
+- **Hướng viết:** R1 chuyển trọng tâm sang tương tác (lý do + hành động theo kênh, Study 1) và bài học DG2: học điểm chất lượng từ nhãn artifact lâm sàng biến nó thành bộ phát hiện nguồn/bệnh lý. Chi tiết: `docs/paper_outline.md` mục 6.
+
 ### Trạng thái R1 (2026-11-16)
 
 **Code:**

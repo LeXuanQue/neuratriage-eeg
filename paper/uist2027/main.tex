@@ -27,7 +27,8 @@ Pre-hospital EEG could help route suspected stroke patients, but in the largest 
 We present a triage interface built around two ideas: tell a non-expert operator \emph{which electrode} to fix and \emph{how}, and let the system \emph{withhold} a decision with a guarantee the clinician can rely on.
 The system scores every channel of a consumer headband in real time, attaches a reason and an action to each problem, and replaces ad-hoc confidence bands with patient-level conformal prediction, so that ``No-Decision'' carries a false-alert bound.
 On held-out recording sources, our rule kept the realised false-alert rate at or below the target (7.7\% at $\alpha{=}0.1$), whereas the deployed fixed thresholds reached 30\% and a naive window-level calibration up to 52\%.
-\TODO{One sentence each on the TUAR technical evaluation and the two user studies, once run.}
+On 113 held-out patients with labelled artifacts, a quality score learned from the labels detected artifacts better than the deployed index but withheld half of the stroke windows, so the panel uses hand-set rules that do not penalise slowing.
+\TODO{One sentence each on the two user studies, once run.}
 \end{abstract}
 
 \begin{CCSXML}
@@ -57,7 +58,7 @@ We contribute:
 \begin{itemize}
   \item \textbf{A real-time, device-agnostic triage system} that scores each EEG channel with a reason code and an operator action, and runs on a 2-channel consumer headband, an 8-channel research amplifier, or replayed clinical recordings (Section~\ref{sec:system}).
   \item \textbf{Actionable abstention}: patient-level class-conditional conformal prediction that turns No-Decision into a stated false-alert bound, with the abstention reason (ambiguous evidence vs.\ poor signal) shown to the user (Section~\ref{sec:conformal}).
-  \item \textbf{A technical evaluation} on held-out recording sources showing that the bound holds where fixed thresholds and window-level calibration fail, how many patients on-site calibration needs, how long a recording must be, and \TODO{how well the per-channel reasons and target channel match labelled artifacts (TUAR)} (Section~\ref{sec:techeval}).
+  \item \textbf{A technical evaluation} on held-out recording sources showing that the bound holds where fixed thresholds and window-level calibration fail, how many patients on-site calibration needs, how long a recording must be, how well the per-channel reasons and target channel match labelled artifacts, and why learning the quality score from those labels would gate stroke patients (Section~\ref{sec:techeval}).
   \item \textbf{Two user studies}: novice operators acquiring EEG with per-channel reasons and actions vs.\ a per-channel indicator only (Study~1), and clinicians deciding on vignettes under two wordings of No-Decision (Study~2) \TODO{one-line finding of each}.
 \end{itemize}
 
@@ -149,7 +150,7 @@ Every second, \sqiv{} scores the last 4\,s of each raw device channel. All featu
 Each feature maps to a 0--1 severity through a ramp; the channel score is one minus the weighted severities, and a reason is shown once its severity passes the ramp midpoint.
 The drift definition implements DG2: a steeper $1/f$ slope or more 1--4\,Hz delta (stroke-like slowing) is predicted by the fit and is not penalised, whereas a raw ``power below 0.5\,Hz'' share grows with the exponent and gated slowed EEG as bad contact in an earlier version.
 Missing alpha is reported but never penalised.
-The drift threshold is fitted on half of the TUAR patients and frozen before evaluation \TODO{report the frozen value}.
+The drift ramp is fitted on half of the TUAR patients~\cite{hamid2020tuar} and frozen before evaluation: it starts at the 95th percentile of $\Delta_{\text{drift}}$ over their clean channel-windows (2.19) and saturates at 2.99.
 
 \paragraph{Guidance (DG1).}
 The panel shows every channel's score bar and, for the worst channel, a callout with the channel name, the reason and one action (e.g., ``AF3 --- slow baseline drift: press the electrode firmly or re-wet it''). Figure~\TODO{teaser figure: operator, headband, panel} shows the panel during an artifact.
@@ -186,6 +187,7 @@ Patient-level conformal stays at or below $\alpha$ in both splits (S1: 0.039, 0.
 The fixed thresholds of the deployed detector (alert at $p \ge 0.8$) give 0.30 in S1 and 0.16 in S2, independent of any target.
 Calibrating on windows and alerting when any window crosses the threshold---what a naive streaming implementation does---gives 0.11--0.52, two to five times the target, because windows of one patient are correlated.
 The cost is abstention: at $\alpha = 0.1$, 64\% (S1) and 71\% (S2) of stroke patients fall into No-Decision; at $\alpha = 0.2$, 29\% and 15\%, with sensitivity 0.57 and 0.67. Almost no stroke patient is cleared (miss $\le \alpha$), which is why the framing of No-Decision matters (Study~2).
+The bound also holds behind the quality gate the interface uses. Scoring each window on the raw signal with \sqiv{} (frozen ramp) and dropping windows below the channel threshold removed 16\% of control and 1\% of stroke windows; seven of 50 controls had no usable window and always received No-Decision with reason ``quality''. The realised false-alert rate stayed at or below $\alpha$ in both splits (S1: 0.039, 0.079, 0.155; S2: 0.039, 0.077, 0.151).
 
 \begin{figure*}[t]
   \centering
@@ -215,17 +217,22 @@ Streaming each S2 recording through the deployed detector and scoring patients f
 \end{figure}
 
 \subsection{Per-channel quality on labelled artifacts}
-\TODO{TUAR (one clinical system, channel-level labels; drift threshold fitted on the calibration half, evaluated on the test half):
-(a) artifact detection, \sqiv{} vs.\ the deployed index, fixed rule and learned combiner, patient-bootstrap CI;
-(b) reason accuracy: share of artifact channel-windows where the first reason matches the label type;
-(c) localisation: how often the channel the interface points at carries the labelled artifact, vs.\ chance and vs.\ the deployed index.
-Pre-registered rule: keep the \sqiv{} detection claim only if its learned AUC beats the deployed index by $\ge$0.05; otherwise report the result as negative and keep the interaction claim.}
+We use the TUH artifact corpus (TUAR v3.0.1~\cite{hamid2020tuar}): 310 clinical recordings of 213 patients with artifacts annotated per bipolar channel. A 4\,s channel-window counts as an artifact when an annotation covers at least half of it and as clean when none touches it. Patients are split by a salted hash into a calibration half (100), used only to fix the drift ramp, and a test half (113 patients, 157 recordings, 532k channel-windows, 38\% artifact). All intervals resample patients (2000 draws).
+
+\paragraph{Detection.}
+The hand-set \sqiv{} rule detects labelled artifacts \emph{worse} than the deployed index: AUC 0.708 vs.\ 0.743 (difference $-0.035$ [$-0.063$, $-0.008$]). The \sqiv{} features nevertheless carry more information: a logistic model over them, cross-fitted by patient, reaches 0.827 vs.\ 0.746 over the deployed index's features ($+0.081$ [0.048, 0.117]), which passes our pre-registered rule (gain $\ge 0.05$) on the point estimate but not on the lower bound. The gain comes from eye movements ($+0.18$) and electrode artifacts ($+0.21$); muscle and chewing are detected equally well by both.
+
+\paragraph{A learned score breaks DG2.}
+We therefore fitted that model on the calibration half and froze it with a threshold that flags 5\% of clean channel-windows (plan committed before fitting). On the test half it beat the deployed index by $+0.081$ [0.057, 0.109]. On our stroke cohorts, however, it withheld 51\% of stroke windows and 0.3\% of control windows, and its mean score alone separated the two (AUC 0.006, i.e., near-perfect in reverse): its largest weight is on the aperiodic exponent, which stroke slowing and device differences both shift. The one variant we had fixed in advance, without the delta and alpha features, failed the same way (45\% vs.\ 0.1\%). We kept the hand-set rule. A quality score learned from artifact labels on one clinical system becomes a detector of the recording source or of the pathology itself; for a triage system this is the worst failure, because it withholds decisions from exactly the patients it is for.
+
+\paragraph{Reasons and target channel.}
+\sqiv{} gives a reason for 50\% of artifact channel-windows; when it does, the reason matches the labelled type in 71\%. Most eye movements (86\%) get no reason, and 22\% of muscle windows are called drift. The channel the interface points at carries the labelled artifact in 53\% of windows with both artifact and clean channels, against 38\% by chance and 54\% for the deployed index (difference [$-0.044$, 0.039]). The per-channel reasons are thus a useful but imperfect description; we do not claim that \sqiv{} localises artifacts better than a per-channel version of the deployed index, and Study~1 tests whether the reasons and actions help operators.
 
 \paragraph{Slowing is not gated as artifact (DG2).}
-On one clinical system (TUSL), \sqiv{} withheld fewer slowing segments than background segments (34\% vs.\ 74\% of windows). Across our pooled cohorts it withheld more stroke than control windows (26.0\% vs.\ 19.5\%), driven by drift flags spread over all channels of one stroke source; since source and label coincide there, this cannot be attributed to pathology or device. \TODO{Re-run with the frozen TUAR threshold.}
+With the frozen drift ramp, \sqiv{} withheld fewer slowing segments than background segments on one clinical system (TUSL, 30.5\% vs.\ 47.5\% of windows) and fewer stroke than control windows across sources (0.3\% of 50 stroke vs.\ 15.7\% of 50 control recordings, the latter mostly mains interference on the 60\,Hz control rig). Its record score separates the stroke and control sources with AUC 0.61, against 0.999 for the deployed index's features (Section~\ref{sec:lessons}), so the hand-set rule carries far less of the acquisition shortcut.
 
 \paragraph{A real headband recording.}
-On a 19\,s recording from the 2-channel headband whose first seconds were dominated by slow drift (90--98\% of variance below 0.5\,Hz), the deployed quality index passed all 37 windows (mean 0.95). \sqiv{} flagged drift on the first $\approx$6\,s and asked the operator to press or re-wet AF3. \TODO{Re-run with the frozen threshold.}
+On a 19\,s recording from the 2-channel headband whose first seconds were dominated by slow drift (90--98\% of variance below 0.5\,Hz), the deployed quality index passed all 37 windows (mean 0.95). With the frozen ramp, \sqiv{} asked the operator to press or re-wet AF3 once, in the window ending at 9\,s ($\Delta_{\text{drift}} = 2.76$), and flagged three windows with transients. The first 10\,s had $\Delta_{\text{drift}}$ between 1.6 and 2.8, at the onset of the ramp: a threshold set at the 95th percentile of clean clinical channels is lenient for a dry headband, and a device-specific ramp would have flagged the whole drift episode, as the synthetic default did.
 
 %% ===================================================================================
 \section{Study 1: Novice Acquisition}
@@ -307,7 +314,7 @@ Nothing in the quality layer or the decision rule is specific to stroke. Per-cha
 Our stroke and control recordings come from different public sources; even our most controlled split cannot separate pathology from acquisition completely, and we make no diagnostic claim.
 The 2-channel headband is used for quality and guidance only; classification uses 18-channel recordings.
 The conformal bound assumes exchangeable patients at the deployment site and is marginal over calibration draws.
-The drift threshold is calibrated on one clinical system \TODO{TUAR}.
+The drift threshold is calibrated on one clinical system (TUAR) and is lenient for the dry headband; the reasons miss most eye movements.
 Study~1 operators were mostly novices recruited on campus, a proxy for paramedics who work under time pressure in a moving vehicle; the scripted faults are common causes of poor contact but not an exhaustive set, and healthy wearers do not move, sweat or vomit like patients.
 Study~2 uses vignettes, not patients, so it measures stated decisions rather than actual transfers, and its sample detects only large framing effects.
 
