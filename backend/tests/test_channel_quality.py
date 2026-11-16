@@ -127,3 +127,44 @@ def test_load_sqi_config_falls_back_to_defaults(tmp_path) -> None:
 
     cfg = load_sqi_config(line_freq=50.0, calibration_path=tmp_path / "missing.json")
     assert cfg.drift_ramp == sqi_v2.SqiV2Config().drift_ramp
+
+
+def _scorer_dict(p: float) -> dict:
+    return {"features": ["kurtosis"], "medians": [0.0], "quantiles": [[0.0], [1.0]], "references": [0.0, 1.0],
+            "coef": [0.0], "intercept": math.log(p / (1 - p)), "threshold": 0.5}
+
+
+@pytest.mark.unit
+def test_load_sqi_scorer_returns_none_without_a_promoted_scorer(tmp_path) -> None:
+    from app.services.channel_quality import load_sqi_scorer
+
+    assert load_sqi_scorer(tmp_path / "missing.json") is None
+
+
+@pytest.mark.unit
+def test_load_sqi_scorer_ignores_a_corrupt_file(tmp_path) -> None:
+    from app.services.channel_quality import load_sqi_scorer
+
+    bad = tmp_path / "bad.json"
+    bad.write_text("{not json", encoding="utf-8")
+    assert load_sqi_scorer(bad) is None
+
+
+@pytest.mark.unit
+def test_tracker_scores_channels_with_the_learned_scorer(tmp_path) -> None:
+    from app.services.channel_quality import load_sqi_scorer
+
+    path = tmp_path / "scorer.json"
+    path.write_text(json.dumps(_scorer_dict(0.99)), encoding="utf-8")
+    scorer = load_sqi_scorer(path)
+    assert scorer is not None
+    tracker = ChannelQualityTracker(["AF3", "AF4"], FS, scorer=scorer)
+    msgs = _feed(tracker, _clean(2, 6))
+    assert msgs and all(c["score"] < 0.7 for c in msgs[-1]["channels"])
+
+
+@pytest.mark.unit
+def test_tracker_without_scorer_keeps_the_hand_set_rules(tmp_path) -> None:
+    tracker = ChannelQualityTracker(["AF3", "AF4"], FS, scorer=None, scorer_path=tmp_path / "none.json")
+    msgs = _feed(tracker, _clean(2, 6))
+    assert msgs and all(c["score"] >= 0.7 for c in msgs[-1]["channels"])

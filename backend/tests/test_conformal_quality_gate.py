@@ -102,3 +102,19 @@ def test_align_windows_never_matches_across_patients() -> None:
     a = np.ones((2, 1, 4), dtype=np.float32)
     idx = G.align_windows(np.array(["p1", "p2"]), a, np.array(["p3", "p3"]), a)
     assert idx.tolist() == [-1, -1]
+
+
+@pytest.mark.unit
+def test_usable_windows_follow_the_channel_scorer_when_given() -> None:
+    import math
+
+    import sqi_learned
+
+    def const(p: float):
+        return sqi_learned.learned_scorer_from_dict({
+            "features": ["kurtosis"], "medians": [0.0], "quantiles": [[0.0], [1.0]], "references": [0.0, 1.0],
+            "coef": [0.0], "intercept": math.log(p / (1 - p)), "threshold": 0.5})
+
+    noisy = np.random.default_rng(0).normal(0, 20, size=(2, 4, 1024))
+    assert G.usable_windows(noisy, fs=256.0, line_freq=50.0, scorer=const(0.01)).all()
+    assert not G.usable_windows(noisy, fs=256.0, line_freq=50.0, scorer=const(0.99)).any()

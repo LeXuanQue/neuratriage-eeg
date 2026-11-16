@@ -9,7 +9,10 @@ Scored on the device channels, not the 18-channel pipeline map, for the same rea
 
 The drift threshold comes from the frozen TUAR calibration when it exists
 (``results/sqi_v2_calibration.json`` or ``NEURATRIAGE_SQI_CALIBRATION``), otherwise from
-the synthetic defaults in ``sqi_v2``.
+the synthetic defaults in ``sqi_v2``. The channel score comes from the TUAR-fitted learned
+scorer when it has been promoted (``results/sqi_v2_learned_scorer.json`` or
+``NEURATRIAGE_SQI_SCORER``, see scripts/sqi_learned_scorer.py), otherwise from the hand-set
+rules. Reasons and advice always come from the rules.
 """
 from __future__ import annotations
 
@@ -20,11 +23,13 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence
 
 import numpy as np
+import sqi_learned
 import sqi_v2
 
 logger = logging.getLogger("neuratriage.quality")
 
 DEFAULT_CALIBRATION = Path(__file__).resolve().parents[3] / "results" / "sqi_v2_calibration.json"
+DEFAULT_SCORER = DEFAULT_CALIBRATION.with_name("sqi_v2_learned_scorer.json")
 DEFAULT_LINE_FREQ = 50.0  # mains frequency where the device is used (Vietnam: 50 Hz)
 
 
@@ -41,6 +46,18 @@ def load_sqi_config(line_freq: float = DEFAULT_LINE_FREQ, calibration_path: Opti
     return sqi_v2.config_from_dict(values)
 
 
+def load_sqi_scorer(scorer_path: Optional[Path] = None) -> Optional[sqi_learned.LearnedScorer]:
+    """The promoted learned channel scorer, or None (hand-set rules) when there is none."""
+    path = Path(scorer_path or os.environ.get("NEURATRIAGE_SQI_SCORER", DEFAULT_SCORER))
+    try:
+        return sqi_learned.learned_scorer_from_dict(json.loads(path.read_text(encoding="utf-8")))
+    except FileNotFoundError:
+        return None
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        logger.warning("Ignoring unreadable SQI scorer %s: %s", path, exc)
+        return None
+
+
 def _finite(value: float) -> float:
     return round(float(value), 3) if np.isfinite(value) else 0.0
 
@@ -55,10 +72,13 @@ class ChannelQualityTracker:
         window_sec: float = 4.0,
         every_sec: float = 1.0,
         config: Optional[sqi_v2.SqiV2Config] = None,
+        scorer: Optional[sqi_learned.LearnedScorer] = None,
+        scorer_path: Optional[Path] = None,
     ) -> None:
         self._names: List[str] = [str(n) for n in channel_names]
         self._fs = float(fs)
         self._config = config or load_sqi_config()
+        self._scorer = scorer if scorer is not None else load_sqi_scorer(scorer_path)
         self._win = int(round(window_sec * self._fs))
         self._every = max(1, int(round(every_sec * self._fs)))
         self._buf = np.zeros((len(self._names), 0), dtype=float)
@@ -87,7 +107,7 @@ class ChannelQualityTracker:
         return self._message()
 
     def _message(self) -> Dict[str, Any]:
-        quality = sqi_v2.assess_window(self._buf, self._fs, channel_names=self._names, config=self._config)
+        quality = sqi_v2.assess_window(self._buf, self._fs, channel_names=self._names, config=self._config, scorer=self._scorer)
         tip = sqi_v2.guidance(quality)
         return {
             "type": "channel_quality",

@@ -113,6 +113,10 @@ def run(log_path: Path) -> dict:
             if v2_msgs else None,
             "reason_counts": reasons,
             "first_tip": tips[0] if tips else None,
+            "timeline": [
+                {"t": m["timestamp_sec"], "channels": [{k: c[k] for k in ("name", "score", "reasons")} for c in m["channels"]]}
+                for m in v2_msgs
+            ],
         },
         "spectral_last_4s": spectral,
     }

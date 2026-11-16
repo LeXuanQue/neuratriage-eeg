@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, fields
 from types import MappingProxyType
-from typing import Mapping, Optional, Sequence, Tuple
+from typing import Mapping, Optional, Protocol, Sequence, Tuple
 
 import numpy as np
 from scipy import signal
@@ -283,8 +283,22 @@ def _fill_gaps(x: np.ndarray) -> Tuple[np.ndarray, float]:
     return filled, frac
 
 
+class ChannelScorer(Protocol):
+    """Anything that turns SQI v2 features into a 0-1 channel score (``sqi_learned.LearnedScorer``)."""
+
+    def channel_score(self, features: Mapping[str, float]) -> float: ...
+
+
+def _strongest_reason(features: Mapping[str, float], cfg: SqiV2Config) -> Tuple[str, ...]:
+    """The rule with the largest weighted penalty, if any rule penalises the channel at all."""
+    sev = _severities(features, cfg)
+    weighted = {r: s * w for r, (s, w) in sev.items() if np.isfinite(s * w) and s * w > 0}
+    return (max(weighted, key=weighted.get),) if weighted else ()
+
+
 def _score_channel(
-    name: str, x: np.ndarray, missing: float, is_flat: bool, fs: float, cfg: SqiV2Config
+    name: str, x: np.ndarray, missing: float, is_flat: bool, fs: float, cfg: SqiV2Config,
+    scorer: Optional[ChannelScorer] = None,
 ) -> ChannelQuality:
     if missing >= 1.0:
         return ChannelQuality(name=name, score=0.0, reasons=("missing",), features=MappingProxyType({"missing_fraction": 1.0}))
@@ -292,6 +306,10 @@ def _score_channel(
         return ChannelQuality(name=name, score=0.0, reasons=("flat",), features=MappingProxyType({"missing_fraction": missing}))
     feats = {**channel_features(x, fs, cfg), "missing_fraction": missing}
     score, reasons = score_features(feats, cfg)
+    if scorer is not None:
+        score = float(scorer.channel_score(feats))
+        if score < CHANNEL_OK and not reasons:
+            reasons = _strongest_reason(feats, cfg)  # a channel marked bad must say what to fix
     return ChannelQuality(name=name, score=score, reasons=reasons, features=MappingProxyType(feats))
 
 
@@ -310,8 +328,12 @@ def assess_window(
     fs: float,
     channel_names: Optional[Sequence[str]] = None,
     config: Optional[SqiV2Config] = None,
+    scorer: Optional[ChannelScorer] = None,
 ) -> WindowQuality:
-    """Score each channel of a raw ``(channels, samples)`` window and the window as a whole."""
+    """Score each channel of a raw ``(channels, samples)`` window and the window as a whole.
+
+    With ``scorer`` the channel score comes from it (the TUAR-fitted model); reasons always
+    come from the rules."""
     cfg = config or SqiV2Config()
     x = np.asarray(window, dtype=float)
     _validate(x, fs, channel_names, cfg)
@@ -327,7 +349,7 @@ def assess_window(
     flat = flat | (stds == 0)
 
     channels = tuple(
-        _score_channel(names[i], x[i], missing[i], bool(flat[i]), fs, cfg) for i in range(x.shape[0])
+        _score_channel(names[i], x[i], missing[i], bool(flat[i]), fs, cfg, scorer) for i in range(x.shape[0])
     )
     scores = np.array([c.score for c in channels])
     return WindowQuality(score=float(scores.mean()), channels=channels, worst_channel=int(np.argmin(scores)))

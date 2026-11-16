@@ -44,14 +44,14 @@ def make_config(line_freq: float) -> S.SqiV2Config:
     return S.config_from_dict(values)
 
 
-def record_windows(path: Path, line_freq: float) -> list[dict]:
+def record_windows(path: Path, line_freq: float, scorer=None) -> list[dict]:
     d = np.load(path)
     x, fs = d["data"].astype(float), float(d["fs"])
     n = int(WIN_SEC * fs)
     cfg = make_config(line_freq)
     rows = []
     for k in list(range(0, x.shape[1] - n + 1, n))[:MAX_WINDOWS_PER_RECORD]:
-        q = S.assess_window(x[:, k : k + n], fs, config=cfg)
+        q = S.assess_window(x[:, k : k + n], fs, config=cfg, scorer=scorer)
         reasons = [r for c in q.channels for r in c.reasons]
         rows.append({
             "score": q.score,
@@ -62,10 +62,10 @@ def record_windows(path: Path, line_freq: float) -> list[dict]:
     return rows
 
 
-def summarize(paths: Sequence[Path], line_freq: float) -> tuple[dict, np.ndarray]:
+def summarize(paths: Sequence[Path], line_freq: float, scorer=None) -> tuple[dict, np.ndarray]:
     per_record, all_rows = [], []
     for p in paths:
-        rows = record_windows(p, line_freq)
+        rows = record_windows(p, line_freq, scorer)
         if rows:
             all_rows.extend(rows)
             per_record.append((
@@ -85,18 +85,19 @@ def summarize(paths: Sequence[Path], line_freq: float) -> tuple[dict, np.ndarray
     return summary, rec[:, 0]
 
 
-def main() -> None:
+def gate_check(scorer=None) -> dict:
+    """E9 on the four cohorts; ``scorer`` swaps the hand-set channel score for a learned one."""
     import pandas as pd
     from sklearn.metrics import roc_auc_score
 
     out: dict = {}
-    out["IS"], is_scores = summarize(sorted((ROOT / "dataset_ischemic").glob("sub-*.npz")), 50.0)
+    out["IS"], is_scores = summarize(sorted((ROOT / "dataset_ischemic").glob("sub-*.npz")), 50.0, scorer)
     # PhysioNet eegmmidb is a US rig: 60 Hz mains (peak ~100x background), not 50 Hz
-    out["NS"], ns_scores = summarize(sorted((ROOT / "dataset_healthy").glob("*.npz"))[:N_CONTROLS], 60.0)
+    out["NS"], ns_scores = summarize(sorted((ROOT / "dataset_healthy").glob("*.npz"))[:N_CONTROLS], 60.0, scorer)
     manifest = pd.read_csv(ROOT / "dataset_tuh" / "manifest_tuh.csv")
     for label, name in [(1, "TUSL_slow"), (0, "TUSL_bckg")]:
         paths = [ROOT / Path(p.replace("\\", "/")) for p in manifest.loc[manifest["label"] == label, "path"]]
-        out[name], _ = summarize(paths, 60.0)  # TUH is a US rig
+        out[name], _ = summarize(paths, 60.0, scorer)  # TUH is a US rig
     y = np.r_[np.ones(len(is_scores)), np.zeros(len(ns_scores))]
     out["auc_is_vs_ns_from_v2_record_score"] = float(roc_auc_score(y, np.r_[is_scores, ns_scores]))
     out["drift_ramp"] = list(make_config(50.0).drift_ramp)
@@ -105,8 +106,24 @@ def main() -> None:
         out["IS"]["gated_rate"] <= out["NS"]["gated_rate"]
         and out["TUSL_slow"]["gated_rate"] <= out["TUSL_bckg"]["gated_rate"]
     )
-    dest = ROOT / "results" / "sqi_v2_gate_check.json"
-    dest.write_text(json.dumps(out, indent=2), encoding="utf-8")
+    return out
+
+
+def main() -> None:
+    import argparse
+
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap.add_argument("--scorer", help="learned scorer JSON (scripts/sqi_learned_scorer.py); default: hand-set rules")
+    ap.add_argument("--out", default=str(ROOT / "results" / "sqi_v2_gate_check.json"))
+    args = ap.parse_args()
+    scorer = None
+    if args.scorer:
+        import sqi_learned
+
+        scorer = sqi_learned.learned_scorer_from_dict(json.loads(Path(args.scorer).read_text(encoding="utf-8")))
+    out = gate_check(scorer)
+    out["scorer"] = args.scorer or "hand-set rules"
+    Path(args.out).write_text(json.dumps(out, indent=2), encoding="utf-8")
     print(json.dumps(out, indent=2))
 
 

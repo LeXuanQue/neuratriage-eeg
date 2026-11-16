@@ -47,13 +47,13 @@ def line_freq_for(source: str) -> float:
     return LINE_FREQ[source]
 
 
-def usable_windows(windows: np.ndarray, fs: float, line_freq: float) -> np.ndarray:
-    """True where SQI v2 scores the whole window at or above CHANNEL_OK."""
+def usable_windows(windows: np.ndarray, fs: float, line_freq: float, scorer=None) -> np.ndarray:
+    """True where SQI v2 scores the whole window at or above CHANNEL_OK (``scorer``: learned channel score)."""
     import sqi_v2 as S
     from sqi_v2_gate_check import make_config
 
     cfg = make_config(line_freq)
-    return np.array([S.assess_window(np.asarray(w, float), fs, config=cfg).score >= S.CHANNEL_OK
+    return np.array([S.assess_window(np.asarray(w, float), fs, config=cfg, scorer=scorer).score >= S.CHANNEL_OK
                      for w in windows], dtype=bool)
 
 
@@ -131,7 +131,7 @@ def align_windows(cached_pids: np.ndarray, cached: np.ndarray,
     return out
 
 
-def split_usable(split: str, win: pd.DataFrame, workers: int) -> Tuple[np.ndarray, dict]:
+def split_usable(split: str, win: pd.DataFrame, workers: int, scorer=None) -> Tuple[np.ndarray, dict]:
     """SQI v2 usable mask for the cached window probabilities of one split (same order).
 
     The model's cached windows are band-passed and re-referenced; the deployed tracker scores
@@ -148,7 +148,7 @@ def split_usable(split: str, win: pd.DataFrame, workers: int) -> Tuple[np.ndarra
             raise SystemExit(f"{split}/{source}: cached probabilities and model windows are not aligned")
         z = raw_source_windows(source, manifests[source], CAP_PER_PATIENT, workers)
         idx = align_windows(cached["pids"], cached["windows"], z["pids"], z["windows"])
-        ok = usable_windows(z["raw"], 256.0, line_freq_for(source))
+        ok = usable_windows(z["raw"], 256.0, line_freq_for(source), scorer)
         parts.append(np.where(idx >= 0, ok[np.maximum(idx, 0)], False))
         unmatched[source] = int((idx < 0).sum())
         print(f"[{split}] {source}: {parts[-1].mean():.1%} of {len(parts[-1])} windows usable, "
@@ -165,17 +165,21 @@ def main() -> None:
     ap.add_argument("--out", default=str(ROOT / "results" / "conformal_quality_gate.json"))
     args = ap.parse_args()
 
+    from app.services.channel_quality import DEFAULT_SCORER, load_sqi_scorer
+
     calib = ROOT / "results" / "sqi_v2_calibration.json"
+    scorer = load_sqi_scorer(DEFAULT_SCORER)  # the same channel score the live tracker uses
     report = {
         "condition": "as conformal_no_decision.py, windows kept only if SQI v2 on the raw signal >= CHANNEL_OK",
         "drift_ramp_source": str(calib) if calib.exists() else "default (synthetic)",
+        "channel_scorer": str(DEFAULT_SCORER) if scorer is not None else "hand-set rules",
         "n_rep": args.n_rep, "drop_rule": f"guarantee_holds iff mean FAR <= alpha + {GUARANTEE_SLACK}",
         "splits": {},
     }
     for split in args.splits:
         win = pd.read_csv(ROOT / "results" / f"conformal_window_probs_{split}.csv")
         win = win.sort_values("source", key=lambda s: s.map(SPLIT_SOURCES[split].index), kind="stable")
-        usable, unmatched = split_usable(split, win, args.workers)
+        usable, unmatched = split_usable(split, win, args.workers, scorer)
         report["splits"][split] = run_gated_split(win.reset_index(drop=True), usable, args.n_rep, args.seed)
         report["splits"][split]["windows_without_rebuilt_twin"] = unmatched
     Path(args.out).write_text(json.dumps(report, indent=2), encoding="utf-8")
