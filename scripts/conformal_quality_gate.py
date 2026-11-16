@@ -108,24 +108,52 @@ def run_gated_split(win: pd.DataFrame, usable: np.ndarray, n_rep: int, seed: int
     return out
 
 
-def split_usable(split: str, win: pd.DataFrame, workers: int) -> np.ndarray:
+ALIGN_RTOL = 1e-3  # max |diff| relative to the window's peak, float32 round-off is ~1e-7
+
+
+def align_windows(cached_pids: np.ndarray, cached: np.ndarray,
+                  rebuilt_pids: np.ndarray, rebuilt: np.ndarray) -> np.ndarray:
+    """Index of each cached window's twin among the rebuilt windows of the same patient, -1 if none.
+
+    The rebuild reruns the window selection with today's code; a borderline v1 pre-gate decision
+    can drop or add a window, so windows are matched by content, never by position."""
+    cached_pids, rebuilt_pids = np.asarray(cached_pids).astype(str), np.asarray(rebuilt_pids).astype(str)
+    out = np.full(len(cached), -1, dtype=int)
+    for pid in np.unique(cached_pids):
+        cand = np.flatnonzero(rebuilt_pids == pid)
+        if cand.size == 0:
+            continue
+        for i in np.flatnonzero(cached_pids == pid):
+            diff = np.abs(rebuilt[cand] - cached[i]).reshape(cand.size, -1).max(axis=1)
+            k = int(np.argmin(diff))
+            if diff[k] <= ALIGN_RTOL * max(float(np.abs(cached[i]).max()), 1e-6):
+                out[i] = cand[k]
+    return out
+
+
+def split_usable(split: str, win: pd.DataFrame, workers: int) -> Tuple[np.ndarray, dict]:
     """SQI v2 usable mask for the cached window probabilities of one split (same order).
 
     The model's cached windows are band-passed and re-referenced; the deployed tracker scores
-    the raw stream, so the gate runs on the unfiltered signal of the same windows."""
-    from leave_source_out import _manifests, raw_source_windows
+    the raw stream, so the gate runs on the unfiltered signal of the same windows. Cached
+    windows without a rebuilt twin count as unusable (conservative) and are reported."""
+    from leave_source_out import CACHE, _manifests, raw_source_windows
 
     manifests = _manifests(50)
-    parts = []
+    parts, unmatched = [], {}
     for source in SPLIT_SOURCES[split]:
-        z = raw_source_windows(source, manifests[source], CAP_PER_PATIENT, workers)
+        cached = np.load(CACHE / f"{source}_cap{CAP_PER_PATIENT}.npz", allow_pickle=True)
         rows = win[win["source"] == source]
-        if len(rows) != len(z["raw"]) or not np.array_equal(rows["pid"].astype(str).to_numpy(),
-                                                             z["pids"].astype(str)):
-            raise SystemExit(f"{split}/{source}: cached probabilities and raw windows are not aligned")
-        parts.append(usable_windows(z["raw"], 256.0, line_freq_for(source)))
-        print(f"[{split}] {source}: {parts[-1].mean():.1%} of {len(parts[-1])} windows usable", flush=True)
-    return np.concatenate(parts)
+        if not np.array_equal(rows["pid"].astype(str).to_numpy(), cached["pids"].astype(str)):
+            raise SystemExit(f"{split}/{source}: cached probabilities and model windows are not aligned")
+        z = raw_source_windows(source, manifests[source], CAP_PER_PATIENT, workers)
+        idx = align_windows(cached["pids"], cached["windows"], z["pids"], z["windows"])
+        ok = usable_windows(z["raw"], 256.0, line_freq_for(source))
+        parts.append(np.where(idx >= 0, ok[np.maximum(idx, 0)], False))
+        unmatched[source] = int((idx < 0).sum())
+        print(f"[{split}] {source}: {parts[-1].mean():.1%} of {len(parts[-1])} windows usable, "
+              f"{unmatched[source]} without a rebuilt twin", flush=True)
+    return np.concatenate(parts), unmatched
 
 
 def main() -> None:
@@ -147,8 +175,9 @@ def main() -> None:
     for split in args.splits:
         win = pd.read_csv(ROOT / "results" / f"conformal_window_probs_{split}.csv")
         win = win.sort_values("source", key=lambda s: s.map(SPLIT_SOURCES[split].index), kind="stable")
-        report["splits"][split] = run_gated_split(win.reset_index(drop=True), split_usable(split, win, args.workers),
-                                                  args.n_rep, args.seed)
+        usable, unmatched = split_usable(split, win, args.workers)
+        report["splits"][split] = run_gated_split(win.reset_index(drop=True), usable, args.n_rep, args.seed)
+        report["splits"][split]["windows_without_rebuilt_twin"] = unmatched
     Path(args.out).write_text(json.dumps(report, indent=2), encoding="utf-8")
     for split, r in report["splits"].items():
         print(f"\n== {split}: usable windows {r['usable_window_share']}, "

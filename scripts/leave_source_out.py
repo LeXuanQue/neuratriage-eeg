@@ -218,13 +218,14 @@ def _jobs(manifest: pd.DataFrame, cap_per_patient: int, want_raw: bool = False) 
 
 def raw_source_windows(name: str, manifest: pd.DataFrame, cap_per_patient: int, workers: int) -> dict:
     """Unfiltered signal of exactly the windows load_source keeps (same order), cached."""
-    cache = CACHE / f"{name}_cap{cap_per_patient}_raw.npz"
+    cache = CACHE / f"{name}_cap{cap_per_patient}_rawv2.npz"
     if cache.exists():
         z = np.load(cache, allow_pickle=True)
         return {k: z[k] for k in z.files}
     with ProcessPoolExecutor(workers) as ex:
         res = [r for r in ex.map(_windows_for_file, _jobs(manifest, cap_per_patient, True)) if r is not None]
     out = {"raw": np.concatenate([r["raw"] for r in res]),
+           "windows": np.concatenate([r["windows"] for r in res]),  # model input, to align with the cache
            "pids": np.concatenate([[r["pid"]] * len(r["raw"]) for r in res])}
     CACHE.mkdir(parents=True, exist_ok=True)
     np.savez(cache, **out)

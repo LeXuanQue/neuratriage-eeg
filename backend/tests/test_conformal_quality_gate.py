@@ -83,3 +83,22 @@ def test_all_usable_matches_the_ungated_rule() -> None:
     gated = G.run_gated_split(win, usable, n_rep=30, seed=3, alphas=(0.1,))
     assert gated["n_patients_without_usable_window"] == {"control": 0, "stroke": 0}
     assert gated["usable_window_share"] == {"control": 1.0, "stroke": 1.0}
+
+
+@pytest.mark.unit
+def test_align_windows_matches_by_content_within_patient() -> None:
+    rng = np.random.default_rng(0)
+    a = rng.normal(size=(5, 2, 8)).astype(np.float32)
+    cached_pids = np.array(["p1", "p1", "p1", "p2", "p2"])
+    # rebuilt set lost p1's middle window and kept the rest in order
+    rebuilt = a[[0, 2, 3, 4]] + 1e-7
+    rebuilt_pids = cached_pids[[0, 2, 3, 4]]
+    idx = G.align_windows(cached_pids, a, rebuilt_pids, rebuilt)
+    assert idx.tolist() == [0, -1, 1, 2, 3]
+
+
+@pytest.mark.unit
+def test_align_windows_never_matches_across_patients() -> None:
+    a = np.ones((2, 1, 4), dtype=np.float32)
+    idx = G.align_windows(np.array(["p1", "p2"]), a, np.array(["p3", "p3"]), a)
+    assert idx.tolist() == [-1, -1]
