@@ -81,7 +81,7 @@ EEG (18 ch, 256 Hz)
   -> causal band-pass 1-35 Hz
   -> signal-quality index per window  --(low)--> No-Decision
   -> entropy + MFDFA features (1 s / 4 s dual window, 125-dim)
-  -> calibrated LightGBM (or Riemann model)
+  -> Riemann tangent-space model (default; REALTIME_MODEL=features for calibrated LightGBM)
   -> EMA smoothing, hysteresis 0.80 / 0.60, cooldown
   -> alert + glass-box explanation
 ```

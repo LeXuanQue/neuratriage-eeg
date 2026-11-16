@@ -18,6 +18,17 @@ def _tiny_riemann_model(path: Path) -> Path:
     return path
 
 
+def test_default_realtime_model_is_riemann(monkeypatch: pytest.MonkeyPatch) -> None:
+    # The paper's evaluated numbers (eye-matched AUC, conformal R2) come from the Riemann
+    # model, so the live system and the user studies must run it unless overridden.
+    from app.config import REPO_ROOT, Settings
+
+    monkeypatch.delenv("REALTIME_MODEL", raising=False)
+    settings = Settings(_env_file=None)
+    assert settings.realtime_model == "riemann"
+    assert (REPO_ROOT / settings.riemann_model_path).exists()
+
+
 def test_features_mode_returns_no_window_model(tmp_path: Path) -> None:
     mgr = ModelManager()
 
