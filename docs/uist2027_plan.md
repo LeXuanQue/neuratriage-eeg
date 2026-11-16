@@ -17,7 +17,7 @@ UIST chấm điểm hệ thống và kỹ thuật tương tác kèm đánh giá 
 | C1 | **Hệ thống:** pipeline real-time không phụ thuộc thiết bị (BLE headband AF3/AF4, Cyton 8 kênh, replay) | Có sẵn |
 | C2 | **Kỹ thuật "No-Decision có hành động đi kèm":** SQI v2 theo từng kênh, có mã lý do (R1), kết hợp conformal risk control ở mức bệnh nhân (R2). Giao diện chỉ ra *điện cực nào, làm gì*, kèm cam kết FAR ≤ α | Bắt đầu 2026-11-16 |
 | C3 | **Đánh giá kỹ thuật:** phát hiện artifact trên TUAR (v1 so với v2), đường risk–coverage, tiêm nhiễu khi replay, độ trễ | Chưa làm |
-| C4 | **Study 1, người mới tập đo:** đo trên người khoẻ, có và không có hướng dẫn. Kết quả chính: thời gian đến khi tín hiệu dùng được, tỉ lệ bản ghi dùng được | Chưa làm, cần hồ sơ đạo đức |
+| C4 | **Study 1, người mới tập đo** (protocol: `docs/user_study_protocol.md`): đo trên người khoẻ, có và không có hướng dẫn. Kết quả chính: thời gian đến khi tín hiệu dùng được, tỉ lệ bản ghi dùng được | Chưa làm, cần hồ sơ đạo đức |
 | C5 | **Study 2, cách diễn đạt No-Decision:** nghiên cứu bằng tình huống mô phỏng, đo tỉ lệ bỏ sót ca IS khi hệ thống từ chối trả lời (kiểm tra kết quả của Jabbour 2025) | Chưa làm, cần hồ sơ đạo đức |
 
 **Không claim:** độ chính xác chẩn đoán stroke, đặc biệt trên headband 2 kênh; "validated"; số 0.99.
