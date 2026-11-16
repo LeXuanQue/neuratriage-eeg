@@ -45,7 +45,7 @@ Trạng thái: ✅ có file, 🟡 có nhưng thiếu một phần, ⏳ chờ d�
 
 | # | Claim | Bằng chứng | Trạng thái |
 |---|---|---|---|
-| E1 | Model gốc chủ yếu nhận diện máy đo: SQI-only AUC 0.998 | `results/source_confound_report.json` | ✅ |
+| E1 | Model gốc chủ yếu nhận diện máy đo: SQI-only AUC 0.999 (entropy 0.904), 100 bệnh nhân. Cùng máy TUSL (29 bệnh nhân): SQI 0.771, entropy 0.823 | `results/source_confound_report_crosscohort.json`, `results/source_confound_report_tusl_samerig.json` (file `source_confound_report.json` hiện là bản TUSL) | ✅ |
 | E2 | AUC giảm qua từng mức kiểm soát, kèm CI 95% bootstrap theo bệnh nhân. Trong cùng nguồn: features 0.993, Riemann 0.999. Đổi nguồn: features 0.90–0.99, Riemann 0.90–1.00. Khớp tuổi: 0.89–0.99. **Khớp trạng thái mắt** (control mở mắt): features **0.57 [0.46, 0.68]** và **0.73 [0.60, 0.84]**; Riemann **0.82 [0.71, 0.90]** và **0.82 [0.72, 0.90]**. EEGNet 0.63–0.77 (chưa có CI) | `results/lso_ci_{main,age,eyes}.json`, `results/leave_source_out_eyes_eegnet.json` | ✅ 2026-11-17 (feature + Riemann). EEGNet chưa chạy lại vì chậm |
 | E3 | Ngưỡng cố định sinh 51–66 báo động giả/giờ | `results/clinical_utility.json`, `device_recalibration.json` | ✅ |
 | E4 | Độ trễ end-to-end đủ cho real-time: Riemann 7 ms/chunk 0.5 s, end-to-end 18 kênh p95 65 ms (RTF 0.13); LightGBM features 98 ms/chunk (RTF 0.34); SQI v2 2 kênh 5.7 ms, 18 kênh 49 ms mỗi giây. CPU laptop Intel, không gồm mạng/trình duyệt | `results/latency_riemann.json`, `results/latency.json` | ✅ 2026-11-16 |

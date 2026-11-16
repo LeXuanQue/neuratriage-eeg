@@ -1,0 +1,256 @@
+%% UIST 2027 full paper draft. Compile on Overleaf (acmart is built in) or with TeX Live:
+%%   latexmk -pdf main.tex
+%% Figures come from ../../figures/uist2027 (scripts/paper_figures.py).
+%% Every number must trace to a file in results/ (docs/paper_outline.md, section 3).
+%% \TODO{...} marks text that waits for data (TUAR, Study 1, Study 2) or a verified citation.
+%% CHECK the UIST 2027 CFP for the required template options before submission.
+\documentclass[sigconf,review,anonymous]{acmart}
+
+\usepackage{booktabs}
+\usepackage{xcolor}
+\graphicspath{{../../figures/uist2027/}}
+\newcommand{\TODO}[1]{\textcolor{red}{[TODO: #1]}}
+\newcommand{\sqiv}{SQI\,v2}
+
+\setcopyright{none}
+\acmConference[UIST '27]{The 40th Annual ACM Symposium on User Interface Software and Technology}{October 2027}{Vienna, Austria}
+
+\begin{document}
+
+\title{Know When to Measure Again: Actionable Abstention for Non-Expert EEG Triage}
+
+\author{Anonymous Author(s)}
+\affiliation{\institution{Anonymous Institution}\country{}}
+
+\begin{abstract}
+Pre-hospital EEG could help route suspected stroke patients, but in the largest prehospital study a third of recordings taken by ambulance staff were not usable, and models trained on clinical EEG are easily fooled by acquisition differences.
+We present a triage interface built around two ideas: tell a non-expert operator \emph{which electrode} to fix and \emph{how}, and let the system \emph{withhold} a decision with a guarantee the clinician can rely on.
+The system scores every channel of a consumer headband in real time, attaches a reason and an action to each problem, and replaces ad-hoc confidence bands with patient-level conformal prediction, so that ``No-Decision'' carries a false-alert bound.
+On held-out recording sources, our rule kept the realised false-alert rate at or below the target (7.7\% at $\alpha{=}0.1$), whereas the deployed fixed thresholds reached 30\% and a naive window-level calibration up to 52\%.
+\TODO{One sentence each on the TUAR technical evaluation and the two user studies, once run.}
+\end{abstract}
+
+\begin{CCSXML}
+\TODO{Generate CCS concepts in the ACM tool.}
+\end{CCSXML}
+
+\keywords{EEG, signal quality, selective prediction, conformal prediction, abstention, clinical decision support, wearable sensing}
+
+\maketitle
+
+%% ===================================================================================
+\section{Introduction}
+
+Acute ischemic stroke is time-critical, and an EEG taken in the ambulance could tell paramedics which patients need a thrombectomy-capable centre.
+The first large prospective test of this idea, ELECTRA-STROKE, put a dry-electrode 8-channel EEG in the hands of ambulance personnel: only 212 of 311 recordings (68\%) had sufficient quality for analysis, and the authors concluded that EEG data quality needs to improve before prehospital use~\cite{vanstigt2023electra}.
+The bottleneck is not only the classifier. It is whether a non-expert gets a usable signal, and what the system says when it does not.
+
+We learned the same lesson the hard way. Our first stroke classifier reached a patient-level AUC of 0.99, yet five signal-quality features that carry no pathological information separated the classes almost as well (AUC 0.999): the stroke and control recordings came from different devices, and the model had learned the device.
+When we removed the shortcuts one at a time---different sources, matched age, matched eye state---the entropy-feature model fell to an AUC of 0.57--0.73 (Section~\ref{sec:lessons}).
+A system that reports such a number with confidence is dangerous; a system that refuses to report anything is useless.
+Between the two lies the design space of this paper: a triage interface that helps the operator produce a usable signal and withholds a decision only when it should, with a cost that is stated in advance.
+
+Abstention is not neutral. In a study with 259 clinicians, selective prediction reduced the harm of wrong AI advice overall but increased false negatives when the AI abstained~\cite{jabbour2025}; how the deferral is communicated changes human accuracy~\cite{bondi2022}; and a quality gate that rejects images in a deployed clinical system created friction and delays in the field~\cite{beede2020}.
+An EEG triage interface therefore has to answer three questions at once: \emph{is the signal usable}, \emph{if not, what should the operator do}, and \emph{when the model abstains, what does that commit to}.
+
+We contribute:
+\begin{itemize}
+  \item \textbf{A real-time, device-agnostic triage system} that scores each EEG channel with a reason code and an operator action, and runs on a 2-channel consumer headband, an 8-channel research amplifier, or replayed clinical recordings (Section~\ref{sec:system}).
+  \item \textbf{Actionable abstention}: patient-level class-conditional conformal prediction that turns No-Decision into a stated false-alert bound, with the abstention reason (ambiguous evidence vs.\ poor signal) shown to the user (Section~\ref{sec:conformal}).
+  \item \textbf{A technical evaluation} on held-out recording sources showing that the bound holds where fixed thresholds and window-level calibration fail, how many patients on-site calibration needs, how long a recording must be, and \TODO{how well the per-channel reasons and target channel match labelled artifacts (TUAR)} (Section~\ref{sec:techeval}).
+  \item \textbf{Two user studies}: \TODO{novice operators acquiring EEG with per-channel guidance vs.\ a per-channel indicator only (Study~1), and clinicians deciding on vignettes with two framings of No-Decision (Study~2)}.
+\end{itemize}
+
+%% ===================================================================================
+\section{Related Work}
+
+\paragraph{Prehospital and low-channel EEG for stroke.}
+ELECTRA-STROKE showed that ambulance staff can record a dry-electrode EEG and that spectral and symmetry features carry information about large-vessel occlusion, but also that a third of recordings were unusable~\cite{vanstigt2023electra}.
+Classifiers on hospital EEG report high accuracy~\cite{tong2025}, typically on cohorts where stroke and control recordings differ in acquisition; we show how much of such accuracy can be acquisition rather than pathology.
+Riemannian tangent-space classifiers~\cite{barachant2012} are a strong, fast baseline for few-channel EEG and transfer better across our sources than hand-crafted entropy features.
+
+\paragraph{Signal quality for wearable EEG.}
+Quality indices for single-channel wearable EEG combine amplitude, spectral and artifact-specific features~\cite{grosselin2019}; the aperiodic spectral slope flags artifacts in single-channel recordings~\cite{fasol2023}; and the TUH Artifact Corpus provides channel-level artifact labels from one clinical system~\cite{hamid2020tuar,obeid2016tuh}.
+These works score quality. We use per-channel quality as an \emph{interaction}: a reason, an action, and a target electrode, evaluated by whether novices acquire usable signal faster.
+\TODO{Survey guided-capture interfaces for non-experts (e.g., guided medical imaging capture) and cite verified work here.}
+
+\paragraph{Selective prediction and conformal guarantees.}
+Conformal prediction gives distribution-free, finite-sample coverage~\cite{angelopoulos2021gentle}, and conformal risk control extends it to bounded losses~\cite{angelopoulos2022crc}.
+On EEG, standard conformal coverage breaks when data shift across patients and personalised calibration recovers it~\cite{chatterjee2026}.
+Benchmarks of EEG foundation models show that dataset identity is often decodable and must be controlled~\cite{zare2026}.
+We use the simplest guarantee that matches the clinical unit---one decision per patient---and report what it costs in abstentions.
+
+\paragraph{Clinicians and abstaining AI.}
+Clinicians ignore, trust or negotiate with AI recommendations depending on how they fit the workflow~\cite{sivaraman2023}; human--AI interaction models have been translated into clinical prototypes~\cite{hussain2024}.
+Selective prediction can raise false negatives when the abstention is read as reassurance~\cite{jabbour2025}, and showing a deferral without the model's prediction can improve human accuracy~\cite{bondi2022}.
+Study~2 tests whether an actionable framing of No-Decision avoids the under-triage effect.
+
+%% ===================================================================================
+\section{Lessons from a Shortcut}
+\label{sec:lessons}
+
+\paragraph{Data.}
+We pooled two public ischemic-stroke cohorts and two public healthy-control cohorts \TODO{cite and describe the four datasets: sources, devices, montage, eye state, ages}, re-referenced to a common 18-channel montage, and evaluated at the patient level.
+
+\paragraph{The confound.}
+With patient-level cross-validation on 50 stroke and 50 control recordings, entropy features alone reached an AUC of 0.904. Five signal-quality features alone---flatline, clipping, line-noise and high-frequency ratios---reached 0.999, and every stroke recording came from a different device than every control.
+On a single clinical system (TUH Slowing Corpus, 29 patients, slowing vs.\ background), the same quality features fell to 0.771 while entropy features reached 0.823~\cite{obeid2016tuh}: the quality shortcut is a property of the pooled cohort, not of EEG.
+
+\paragraph{The cascade.}
+Figure~\ref{fig:cascade} removes one shortcut at a time.
+Within a source both models look perfect (AUC 0.993 and 0.999).
+Testing on unseen sources keeps them high (0.90--0.997); matching age changes little (0.89--0.99).
+Matching eye state---stroke recordings were eyes-open, one control source eyes-closed---is decisive: with eyes-open controls the feature model falls to 0.57 [0.46, 0.68] and 0.73 [0.60, 0.84], the Riemannian model holds at 0.82 [0.71, 0.90] and 0.82 [0.72, 0.90].
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\linewidth]{fig_confound_cascade.pdf}
+  \caption{Patient-level AUC (95\% patient-bootstrap CI) as acquisition shortcuts are removed. Each point is one train/test source split. Once controls are also eyes-open, the entropy/MFDFA feature model falls to near chance while the Riemannian model keeps $\approx$0.82.}
+  \label{fig:cascade}
+\end{figure}
+
+\paragraph{Design goals.}
+The cascade turned a classification problem into an interaction problem. We derived four goals:
+\textbf{DG1} --- tell the operator which electrode is the problem and what to do, not only that quality is low;
+\textbf{DG2} --- never treat pathology as artifact (stroke slows and steepens the EEG spectrum, as does poor contact);
+\textbf{DG3} --- when the system withholds, state what that withholding guarantees;
+\textbf{DG4} --- make ``not yet known'' unmistakably different from ``normal''.
+
+%% ===================================================================================
+\section{System}
+\label{sec:system}
+
+\paragraph{Architecture.}
+A FastAPI backend receives EEG over a WebSocket from a Bluetooth LE headband (2 frontal channels, 256\,Hz), an 8-channel research amplifier, or a replayed clinical recording, and feeds every chunk (0.5\,s) through the same path: per-channel quality, a causal detector with a signal-quality gate, a Riemannian tangent-space window model~\cite{barachant2012}, exponential smoothing and hysteresis, and the patient-level decision rule of Section~\ref{sec:conformal}. A browser front end renders the stream, the per-channel panel and the decision.
+On a laptop CPU the Riemannian detector takes 7\,ms per 0.5\,s chunk (p95 10\,ms) and the end-to-end 18-channel path 65\,ms at p95, 13\% of real time; per-channel quality for the 2-channel headband takes 6\,ms once per second.
+
+\subsection{Per-channel quality with reasons (\sqiv)}
+\label{sec:sqi}
+Every second, \sqiv{} scores the last 4\,s of each raw device channel. All features are ratios, shape statistics or log--log slopes, so the score does not depend on the recording unit:
+\begin{itemize}
+  \item \emph{flat} (channel 40\,dB below the median channel), \emph{missing} samples, \emph{clipping} (share of samples at the rails);
+  \item \emph{line noise}: power within $\pm1$\,Hz of the mains frequency relative to 1--35\,Hz, counted only if it forms a narrow peak;
+  \item \emph{muscle}: 35--70\,Hz power relative to 1--35\,Hz (mains removed), or a whitened spectrum (aperiodic exponent below 0.6);
+  \item \emph{transient}: excess kurtosis;
+  \item \emph{drift}: the variance below 0.5\,Hz relative to what the channel's own aperiodic $1/f$ fit predicts there,
+  $\Delta_{\text{drift}} = \log_{10}\!\big(P_{<0.5\,\text{Hz}} / \int_{1/T}^{0.5} 10^{b} f^{-\chi}\,df\big)$,
+  where $\chi$ and $b$ are fitted on 2--40\,Hz with the alpha and mains bands excluded.
+\end{itemize}
+Each feature maps to a 0--1 severity through a ramp; the channel score is one minus the weighted severities, and a reason is shown once its severity passes the ramp midpoint.
+The drift definition implements DG2: a steeper $1/f$ slope or more 1--4\,Hz delta (stroke-like slowing) is predicted by the fit and is not penalised, whereas a raw ``power below 0.5\,Hz'' share grows with the exponent and gated slowed EEG as bad contact in an earlier version.
+Missing alpha is reported but never penalised.
+The drift threshold is fitted on half of the TUAR patients and frozen before evaluation \TODO{report the frozen value}.
+
+\paragraph{Guidance (DG1).}
+The panel shows every channel's score bar and, for the worst channel, a callout with the channel name, the reason and one action (e.g., ``AF3 --- slow baseline drift: press the electrode firmly or re-wet it''). Figure~\TODO{teaser figure: operator, headband, panel} shows the panel during an artifact.
+
+\subsection{Actionable abstention}
+\label{sec:conformal}
+Let $p$ be a patient's mean window probability of stroke over the scored windows.
+We calibrate on $n_0$ control and $n_1$ stroke patients from the deployment site and set
+$q_0 = \hat{Q}_{\lceil (n_0+1)(1-\alpha)\rceil}\{p_i : y_i{=}0\}$ and
+$q_1 = \hat{Q}_{\lceil (n_1+1)(1-\alpha)\rceil}\{1-p_i : y_i{=}1\}$,
+the finite-sample conformal quantiles of each class~\cite{angelopoulos2021gentle}.
+A new patient's prediction set contains \emph{control} if $p \le q_0$ and \emph{stroke} if $1-p \le q_1$. The interface shows
+\textbf{Alert} when the set is \{stroke\},
+\textbf{Clear} when it is \{control\},
+and \textbf{No-Decision} otherwise, with the reason \emph{ambiguous} (both classes plausible), \emph{conflict} (neither) or \emph{quality} (too few usable windows).
+For exchangeable patients, $P(\text{Alert}\mid\text{control}) \le \alpha$ and $P(\text{Clear}\mid\text{stroke}) \le \alpha$ (DG3).
+Two consequences follow directly and shape the interface.
+First, below $\lceil 1/\alpha\rceil - 1$ calibration patients of a class, $q$ is infinite: at $\alpha{=}0.1$ the system cannot alert until 9 controls are calibrated, and it says so.
+Second, the guarantee is per patient, so the streaming interface decides on the session aggregate, not on any single window (Section~\ref{sec:techeval}).
+
+\paragraph{Framing No-Decision (DG4).}
+No-Decision is shown as ``Not yet determined --- this does not mean normal'', with the reason and the next action (continue the standard stroke pathway; re-measure after fixing the named electrode), and without a probability~\cite{bondi2022}. Study~2 compares this framing with a plain one.
+
+%% ===================================================================================
+\section{Technical Evaluation}
+\label{sec:techeval}
+
+\paragraph{Setting.}
+Unless stated otherwise we use the deployed Riemannian model trained on two sources and evaluated on two unseen, eye-state-matched sources: S1 (24 stroke, 50 control) and S2 (50 stroke, 50 control). On-site calibration is simulated by 2000 random stratified halves of the test patients.
+
+\subsection{The false-alert bound holds}
+Figure~\ref{fig:far} compares the realised false-alert rate with the target.
+Patient-level conformal stays at or below $\alpha$ in both splits (S1: 0.039, 0.077, 0.191 at $\alpha = 0.05, 0.1, 0.2$; S2: 0.039, 0.076, 0.186).
+The fixed thresholds of the deployed detector (alert at $p \ge 0.8$) give 0.30 in S1 and 0.16 in S2, independent of any target.
+Calibrating on windows and alerting when any window crosses the threshold---what a naive streaming implementation does---gives 0.11--0.52, two to five times the target, because windows of one patient are correlated.
+The cost is abstention: at $\alpha = 0.1$, 64\% (S1) and 71\% (S2) of stroke patients fall into No-Decision; at $\alpha = 0.2$, 29\% and 15\%, with sensitivity 0.57 and 0.67. Almost no stroke patient is cleared (miss $\le \alpha$), which is why the framing of No-Decision matters (Study~2).
+
+\begin{figure*}[t]
+  \centering
+  \includegraphics[width=0.85\linewidth]{fig_far_vs_alpha.pdf}
+  \caption{Realised false-alert rate (mean, 5--95\% over 2000 calibration draws) against the target $\alpha$ on two held-out source splits. Only patient-level conformal tracks the dashed target; fixed thresholds ignore it and window-level calibration with ``any alert'' exceeds it severalfold.}
+  \label{fig:far}
+\end{figure*}
+
+\subsection{How many calibration patients?}
+The bound is marginal over calibration draws. Figure~\ref{fig:calsize} shows that with 9--20 calibration patients per class the mean false-alert rate stays at or below 0.1, following the theoretical sawtooth $1-\lceil (n+1)(1-\alpha)\rceil/(n+1)$, but a single site's realised rate varies: in 9--21\% of draws it exceeds $\alpha + 0.05$, and its 90th percentile reaches 0.22. A site that wants a per-site guarantee needs more calibration patients or a calibration-conditional bound; we expose this in the interface as the number of calibration patients behind the current $\alpha$.
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\linewidth]{fig_calibration_size.pdf}
+  \caption{False-alert rate at $\alpha = 0.1$ against the number of calibration patients per class (S2, 1000 draws). Below 9 per class the system can never alert. The mean respects $\alpha$; the 90th percentile shows what a single site may experience.}
+  \label{fig:calsize}
+\end{figure}
+
+\subsection{How long to record?}
+Streaming each S2 recording through the deployed detector and scoring patients from the first $T$ seconds (Figure~\ref{fig:time}), the patient AUC is 0.79 after 8\,s and 0.80 after 120\,s; the false-alert rate stays at 0.08 for $\alpha = 0.1$ at every horizon. Recording longer does not make the model more accurate, so the time that matters is the time to a usable signal, which Study~1 measures. The flat curve also indicates that the model reads stationary properties of a recording, which may still include source traits.
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\linewidth]{fig_decision_time.pdf}
+  \caption{Patient AUC, sensitivity and share of stroke patients in No-Decision ($\alpha = 0.2$) against the seconds recorded before deciding (S2, 50 stroke / 50 control).}
+  \label{fig:time}
+\end{figure}
+
+\subsection{Per-channel quality on labelled artifacts}
+\TODO{TUAR (one clinical system, channel-level labels; drift threshold fitted on the calibration half, evaluated on the test half):
+(a) artifact detection, \sqiv{} vs.\ the deployed index, fixed rule and learned combiner, patient-bootstrap CI;
+(b) reason accuracy: share of artifact channel-windows where the first reason matches the label type;
+(c) localisation: how often the channel the interface points at carries the labelled artifact, vs.\ chance and vs.\ the deployed index.
+Pre-registered rule: keep the \sqiv{} detection claim only if its learned AUC beats the deployed index by $\ge$0.05; otherwise report the result as negative and keep the interaction claim.}
+
+\paragraph{Slowing is not gated as artifact (DG2).}
+On one clinical system (TUSL), \sqiv{} withheld fewer slowing segments than background segments (34\% vs.\ 74\% of windows). Across our pooled cohorts it withheld more stroke than control windows (26.0\% vs.\ 19.5\%), driven by drift flags spread over all channels of one stroke source; since source and label coincide there, this cannot be attributed to pathology or device. \TODO{Re-run with the frozen TUAR threshold.}
+
+\paragraph{A real headband recording.}
+On a 19\,s recording from the 2-channel headband whose first seconds were dominated by slow drift (90--98\% of variance below 0.5\,Hz), the deployed quality index passed all 37 windows (mean 0.95). \sqiv{} flagged drift on the first $\approx$6\,s and asked the operator to press or re-wet AF3. \TODO{Re-run with the frozen threshold.}
+
+%% ===================================================================================
+\section{Study 1: Novice Acquisition}
+\label{sec:study1}
+\TODO{Method (from docs/user_study_protocol.md): 16 novice operators, 4 healthy wearers, within-subject, counterbalanced; condition B shows per-channel bars with OK/Poor only, condition G adds reason, action and target channel; three scripted faults per trial (dry electrode, loose band, jaw clench, mains noise); 8\,min limit.
+Primary outcome: time to 60\,s of usable signal rated by a blinded EEG reader on shuffled 10\,s epochs (second rater on 20\%, Cohen's $\kappa$); Wilcoxon signed-rank, Cox model with operator frailty as sensitivity analysis.
+Results, figures and qualitative findings once run.}
+
+\section{Study 2: Framing No-Decision}
+\label{sec:study2}
+\TODO{Method: 40--60 clinicians/nurses/final-year students, 24 vignettes (12 stroke, 12 mimics), AI output within subject (none / alert / clear / No-Decision), framing between subjects (plain vs.\ actionable). Primary outcome: stroke-pathway activation on stroke vignettes with No-Decision; GLMM with participant and vignette random effects; non-inferiority vs.\ no AI (10-point margin). Results once run; requires a clinical advisor to validate vignettes.}
+
+%% ===================================================================================
+\section{Discussion}
+
+\paragraph{$\alpha$ is an interaction parameter.}
+The same model and data give 8\% false alerts with 64--71\% of stroke patients withheld, or 19\% false alerts with 15--29\% withheld. Neither is ``the accuracy''; the choice belongs to the clinical service and should be visible in the interface together with the number of calibration patients behind it.
+
+\paragraph{Abstention moves risk; framing decides where it lands.}
+The conformal rule almost never clears a stroke patient, so the risk sits in No-Decision. Whether that risk becomes a missed stroke depends on how No-Decision is read~\cite{jabbour2025}; Study~2 measures this directly.
+
+\paragraph{Beyond stroke.}
+Nothing in the quality layer or the decision rule is specific to stroke. Per-channel guidance and patient-level abstention apply to any EEG triage task acquired by non-experts \TODO{e.g., point-of-care seizure screening; cite verified work if used}.
+
+\paragraph{Limitations.}
+Our stroke and control recordings come from different public sources; even our most controlled split cannot separate pathology from acquisition completely, and we make no diagnostic claim.
+The 2-channel headband is used for quality and guidance only; classification uses 18-channel recordings.
+The conformal bound assumes exchangeable patients at the deployment site and is marginal over calibration draws.
+The drift threshold is calibrated on one clinical system \TODO{TUAR}.
+\TODO{Study limitations: student operators as proxies for paramedics; vignettes instead of patients.}
+
+\section{Conclusion}
+\TODO{Two to three sentences once all results are in.}
+
+\bibliographystyle{ACM-Reference-Format}
+\bibliography{references}
+
+\end{document}
