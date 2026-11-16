@@ -48,7 +48,7 @@ Trạng thái: ✅ có file, 🟡 có nhưng thiếu một phần, ⏳ chờ d�
 | E1 | Model gốc chủ yếu nhận diện máy đo: SQI-only AUC 0.998 | `results/source_confound_report.json` | ✅ |
 | E2 | AUC giảm qua từng mức kiểm soát: Riemann khớp mắt 0.82, EEGNet 0.63–0.77 | `results/leave_source_out_*.json` | 🟡 các con số AUC chưa có CI (R5) |
 | E3 | Ngưỡng cố định sinh 51–66 báo động giả/giờ | `results/clinical_utility.json`, `device_recalibration.json` | ✅ |
-| E4 | Độ trễ end-to-end đủ cho real-time | Chỉ có ghi chú "4 ms/hop", chưa có file | ❌ cần benchmark |
+| E4 | Độ trễ end-to-end đủ cho real-time: Riemann 7 ms/chunk 0.5 s, end-to-end 18 kênh p95 65 ms (RTF 0.13); LightGBM features 98 ms/chunk (RTF 0.34); SQI v2 2 kênh 5.7 ms, 18 kênh 49 ms mỗi giây. CPU laptop Intel, không gồm mạng/trình duyệt | `results/latency_riemann.json`, `results/latency.json` | ✅ 2026-11-16 |
 | E5 | Headband thật: v1 báo SQI ≈ 0.88 trên log bị drift, v2 phát hiện | `data/ble_signals_log.csv` | ❌ case study chưa chạy |
 | E6 | SQI v2 phát hiện artifact tốt hơn v1 ít nhất 0.05 AUC (TUAR, nửa test) | `results/tuar_sqi_eval.json` | ⏳ đang tải TUAR |
 | E7 | **Lý do đúng loại artifact** (musc/chew → muscle, eyem → transient/drift, elec → flat/drift/transient) | `results/tuar_sqi_eval.json` → `reason_accuracy_e7` | ⏳ code xong 2026-11-16, chờ TUAR |
@@ -56,7 +56,7 @@ Trạng thái: ✅ có file, 🟡 có nhưng thiếu một phần, ⏳ chờ d�
 | E9 | Kiểm tra an toàn với ngưỡng đóng băng: slowing/IS không bị gate nhiều hơn | `results/sqi_v2_gate_check.json` | ⏳ hiện IS/NS chưa đạt, chạy lại sau khi chỉnh trên TUAR |
 | E10 | Conformal giữ FAR ≤ α, heuristic và calib theo cửa sổ thì không | `results/conformal_no_decision.json` | ✅ |
 | E11 | Đảm bảo vẫn đứng vững khi có cổng chất lượng SQI v2 | | ⏳ sau E6 |
-| E12 | Cần bao nhiêu bệnh nhân để calibrate tại chỗ (FAR và tỉ lệ No-Decision theo n mỗi lớp) | | ❌ rẻ, chạy được ngay |
+| E12 | Cần bao nhiêu bệnh nhân để calibrate tại chỗ. **Dưới ⌈1/α⌉−1 bệnh nhân mỗi lớp thì không bao giờ báo động** (α = 0.1 → 9). FAR trung bình ≤ α ở mọi n, theo hình răng cưa đúng lý thuyết 1 − ⌈(n+1)(1−α)⌉/(n+1). Nhưng một lần calibrate với 9–20 bệnh nhân có **10–29% khả năng cho FAR thực > α + 0.05** (p90 tới 0.37). Đảm bảo trung bình ≠ đảm bảo cho từng site | `results/conformal_calibration_size.json` | ✅ 2026-11-16. Đưa vào Discussion: cần conformal có điều kiện theo tập calib nếu muốn đảm bảo cho từng site |
 | E13 | Đo bao lâu thì quyết định được (FAR, độ nhạy, tỉ lệ No-Decision theo thời lượng ghi) | | ❌ phải kiểm trước thứ tự cửa sổ trong cache |
 | E14 | Baseline mạnh (EEGNet, Riemann) cho câu hỏi "sao không dùng deep learning" | `results/leave_source_out_eyes_eegnet.json` | ✅ |
 | E15 | Study 1, Study 2 | | ❌ chờ hồ sơ đạo đức |

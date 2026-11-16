@@ -108,6 +108,35 @@ def stratified_half_split(labels: np.ndarray, rng: np.random.Generator) -> Tuple
     return np.sort(np.concatenate(cal)), np.sort(np.concatenate(test))
 
 
+def min_calibration_size(alpha: float) -> int:
+    """Smallest per-class calibration size with a finite conformal threshold.
+
+    With fewer patients of a class, ceil((n+1)(1-alpha)) > n and that class can never be
+    rejected: e.g. at alpha = 0.1 the system cannot alert before 9 controls are calibrated.
+    """
+    if not 0.0 < alpha < 1.0:
+        raise ValueError(f"alpha must be in (0, 1), got {alpha}")
+    n = 1
+    while math.ceil((n + 1) * (1.0 - alpha)) > n:
+        n += 1
+    return n
+
+
+def sized_split(
+    labels: np.ndarray, n_control: int, n_stroke: int, rng: np.random.Generator
+) -> Tuple[np.ndarray, np.ndarray]:
+    """Calibration set of exactly n_control / n_stroke patients; the rest is the test set."""
+    labels = np.asarray(labels)
+    cal = []
+    for cls, n, name in ((0, n_control, "control"), (1, n_stroke, "stroke")):
+        idx = np.flatnonzero(labels == cls)
+        if not 0 < n < idx.size:
+            raise ValueError(f"need 0 < n_{name} < {idx.size} {name} patients, got {n}")
+        cal.append(rng.choice(idx, size=n, replace=False))
+    cal_idx = np.sort(np.concatenate(cal))
+    return cal_idx, np.setdiff1d(np.arange(labels.size), cal_idx)
+
+
 def _share(mask: np.ndarray, of: np.ndarray) -> float:
     return float(mask[of].mean()) if of.any() else float("nan")
 

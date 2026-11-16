@@ -140,6 +140,30 @@ def test_decision_metrics_with_nothing_decided() -> None:
     assert m["far"] == 0.0 and np.isnan(m["accuracy_decided"])
 
 
+# --------------------------------------------------------------------- E12: calibration size
+@pytest.mark.unit
+@pytest.mark.parametrize("alpha, n", [(0.2, 4), (0.1, 9), (0.05, 19)])
+def test_min_calibration_size_is_the_smallest_n_with_a_finite_threshold(alpha: float, n: int) -> None:
+    assert C.min_calibration_size(alpha) == n
+    assert np.isfinite(C.conformal_quantile(np.arange(float(n)), alpha))
+    assert not np.isfinite(C.conformal_quantile(np.arange(float(n - 1)), alpha))
+
+
+@pytest.mark.unit
+def test_sized_split_takes_exact_counts_per_class() -> None:
+    y = np.r_[np.zeros(50, int), np.ones(24, int)]
+    cal, test = C.sized_split(y, n_control=10, n_stroke=6, rng=np.random.default_rng(0))
+    assert (y[cal] == 0).sum() == 10 and (y[cal] == 1).sum() == 6
+    assert set(cal) | set(test) == set(range(74)) and not set(cal) & set(test)
+
+
+@pytest.mark.unit
+def test_sized_split_rejects_more_than_available() -> None:
+    y = np.r_[np.zeros(5, int), np.ones(5, int)]
+    with pytest.raises(ValueError, match="stroke"):
+        C.sized_split(y, n_control=2, n_stroke=5, rng=np.random.default_rng(0))
+
+
 # --------------------------------------------------------------------- guarantee (Monte Carlo)
 def _draw(rng: np.random.Generator, n_control: int, n_stroke: int) -> tuple[np.ndarray, np.ndarray]:
     """Overlapping patient-level score distributions (AUC ~0.8), exchangeable patients."""
