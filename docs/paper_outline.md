@@ -46,7 +46,7 @@ Trạng thái: ✅ có file, 🟡 có nhưng thiếu một phần, ⏳ chờ d�
 | # | Claim | Bằng chứng | Trạng thái |
 |---|---|---|---|
 | E1 | Model gốc chủ yếu nhận diện máy đo: SQI-only AUC 0.998 | `results/source_confound_report.json` | ✅ |
-| E2 | AUC giảm qua từng mức kiểm soát: Riemann khớp mắt 0.82, EEGNet 0.63–0.77 | `results/leave_source_out_*.json` | 🟡 các con số AUC chưa có CI (R5) |
+| E2 | AUC giảm qua từng mức kiểm soát, kèm CI 95% bootstrap theo bệnh nhân. Trong cùng nguồn: features 0.993, Riemann 0.999. Đổi nguồn: features 0.90–0.99, Riemann 0.90–1.00. Khớp tuổi: 0.89–0.99. **Khớp trạng thái mắt** (control mở mắt): features **0.57 [0.46, 0.68]** và **0.73 [0.60, 0.84]**; Riemann **0.82 [0.71, 0.90]** và **0.82 [0.72, 0.90]**. EEGNet 0.63–0.77 (chưa có CI) | `results/lso_ci_{main,age,eyes}.json`, `results/leave_source_out_eyes_eegnet.json` | ✅ 2026-11-17 (feature + Riemann). EEGNet chưa chạy lại vì chậm |
 | E3 | Ngưỡng cố định sinh 51–66 báo động giả/giờ | `results/clinical_utility.json`, `device_recalibration.json` | ✅ |
 | E4 | Độ trễ end-to-end đủ cho real-time: Riemann 7 ms/chunk 0.5 s, end-to-end 18 kênh p95 65 ms (RTF 0.13); LightGBM features 98 ms/chunk (RTF 0.34); SQI v2 2 kênh 5.7 ms, 18 kênh 49 ms mỗi giây. CPU laptop Intel, không gồm mạng/trình duyệt | `results/latency_riemann.json`, `results/latency.json` | ✅ 2026-11-16 |
 | E5 | Headband thật: v1 báo SQI ≈ 0.88 trên log bị drift, v2 phát hiện | `data/ble_signals_log.csv` | ❌ case study chưa chạy |
@@ -57,7 +57,7 @@ Trạng thái: ✅ có file, 🟡 có nhưng thiếu một phần, ⏳ chờ d�
 | E10 | Conformal giữ FAR ≤ α, heuristic và calib theo cửa sổ thì không | `results/conformal_no_decision.json` | ✅ |
 | E11 | Đảm bảo vẫn đứng vững khi có cổng chất lượng SQI v2 | | ⏳ sau E6 |
 | E12 | Cần bao nhiêu bệnh nhân để calibrate tại chỗ. **Dưới ⌈1/α⌉−1 bệnh nhân mỗi lớp thì không bao giờ báo động** (α = 0.1 → 9). FAR trung bình ≤ α ở mọi n, theo hình răng cưa đúng lý thuyết 1 − ⌈(n+1)(1−α)⌉/(n+1). Nhưng một lần calibrate với 9–20 bệnh nhân có **10–29% khả năng cho FAR thực > α + 0.05** (p90 tới 0.37). Đảm bảo trung bình ≠ đảm bảo cho từng site | `results/conformal_calibration_size.json` | ✅ 2026-11-16. Đưa vào Discussion: cần conformal có điều kiện theo tập calib nếu muốn đảm bảo cho từng site |
-| E13 | Đo bao lâu thì quyết định được (FAR, độ nhạy, tỉ lệ No-Decision theo thời lượng ghi) | | ❌ phải kiểm trước thứ tự cửa sổ trong cache |
+| E13 | Đo bao lâu thì quyết định được. Split S2 (50 IS + 50 NS), phát lại từng bản ghi qua detector đang triển khai. **AUC bão hoà ngay từ 8 s** (0.79 → 0.80 ở 120 s). FAR ổn định ≤ α ở mọi T. Ghi lâu hơn không làm model chính xác hơn, nên chi phí thời gian nằm ở khâu đặt và chỉnh điện cực (Study 1), không ở thời lượng ghi. Cũng là dấu hiệu model bắt đặc tính tĩnh của bản ghi, có thể một phần là đặc tính nguồn, nên phải ghi rõ | `results/decision_time.json` | ✅ 2026-11-17 |
 | E14 | Baseline mạnh (EEGNet, Riemann) cho câu hỏi "sao không dùng deep learning" | `results/leave_source_out_eyes_eegnet.json` | ✅ |
 | E15 | Study 1, Study 2 | | ❌ chờ hồ sơ đạo đức |
 

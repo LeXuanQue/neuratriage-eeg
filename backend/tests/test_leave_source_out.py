@@ -21,6 +21,22 @@ def test_source_swap_never_reuses_a_training_source_at_test_time() -> None:
         assert {"xuanwu", "tianjin"} & set(test) and {"physionet", "oslo"} & set(test)
 
 
+def test_patient_auc_ci_is_degenerate_for_perfect_separation() -> None:
+    pids = np.repeat(np.arange(20), 3)
+    y = (pids >= 10).astype(int)
+    prob = y + 0.01 * np.arange(y.size)
+    lo, hi = lso.patient_auc_ci(pids, y, prob, n_boot=200, seed=0)
+    assert lo == pytest.approx(1.0) and hi == pytest.approx(1.0)
+
+
+def test_patient_auc_ci_covers_chance_for_random_scores() -> None:
+    rng = np.random.default_rng(1)
+    pids = np.repeat(np.arange(40), 5)
+    y = (pids % 2).astype(int)
+    lo, hi = lso.patient_auc_ci(pids, y, rng.random(y.size), n_boot=300, seed=1)
+    assert lo < 0.5 < hi
+
+
 def test_patient_level_auc_averages_windows_per_patient() -> None:
     pids = np.array(["a", "a", "b", "b", "c", "c"])
     y = np.array([1, 1, 0, 0, 1, 1])

@@ -70,6 +70,23 @@ def patient_level_auc(pids: np.ndarray, y: np.ndarray, prob: np.ndarray) -> floa
     return float(roc_auc_score(df["y"], df["prob"])) if df["y"].nunique() == 2 else float("nan")
 
 
+def patient_auc_ci(pids: np.ndarray, y: np.ndarray, prob: np.ndarray, n_boot: int = 2000,
+                   seed: int = 0) -> tuple[float, float]:
+    """95% CI of the patient-level AUC, resampling patients (R5)."""
+    df = pd.DataFrame({"p": pids, "y": y, "prob": prob}).groupby("p").agg(y=("y", "first"), prob=("prob", "mean"))
+    yy, pp = df["y"].to_numpy(), df["prob"].to_numpy()
+    rng = np.random.default_rng(seed)
+    aucs = []
+    for _ in range(n_boot):
+        idx = rng.integers(0, yy.size, yy.size)
+        if np.unique(yy[idx]).size == 2:
+            aucs.append(roc_auc_score(yy[idx], pp[idx]))
+    if not aucs:
+        return float("nan"), float("nan")
+    lo, hi = np.percentile(aucs, [2.5, 97.5])
+    return float(lo), float(hi)
+
+
 def slice_fraction(x: np.ndarray, frac: tuple[float, float]) -> np.ndarray:
     """Keep the [frac0, frac1) fraction of a recording along time (e.g. one PhysioNet run)."""
     n = x.shape[1]
@@ -338,6 +355,7 @@ def main() -> None:
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--experiment", default="main", choices=list(EXPERIMENTS))
     ap.add_argument("--out", default=None)
+    ap.add_argument("--n-boot", type=int, default=2000, help="patient bootstrap draws for the AUC CI")
     args = ap.parse_args()
     out_path = Path(args.out or ROOT / "results" / f"leave_source_out{'' if args.experiment == 'main' else '_' + args.experiment}.json")
     if torch is not None:
@@ -366,7 +384,8 @@ def main() -> None:
             prob = fn(tr, te, args.seed)
             r = {"model": model, "train": train, "test": test,
                  "window_auc": float(roc_auc_score(te["y"], prob)),
-                 "patient_auc": patient_level_auc(te["pids"], te["y"], prob)}
+                 "patient_auc": patient_level_auc(te["pids"], te["y"], prob),
+                 "patient_auc_ci95": list(patient_auc_ci(te["pids"], te["y"], prob, args.n_boot, args.seed))}
             results["source_swap"].append(r)
             print(f"[{model}] train {'+'.join(train):22s} -> test {'+'.join(test):22s} "
                   f"win AUC {r['window_auc']:.3f}  pt AUC {r['patient_auc']:.3f}", flush=True)
