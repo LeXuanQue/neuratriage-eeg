@@ -77,6 +77,8 @@ window.I18N = {
       allGood: "Tất cả kênh đạt. Có thể bắt đầu ghi.",
       fixTitle: "Cần chỉnh",
       ok: "Đạt",
+      poor: "Kém",
+      someBad: "Có kênh chưa đạt.",
       reasons: {
         missing: "Mất mẫu",
         flat: "Không có tín hiệu",
@@ -258,6 +260,8 @@ window.I18N = {
       allGood: "All channels usable. Ready to record.",
       fixTitle: "Fix this",
       ok: "OK",
+      poor: "Poor",
+      someBad: "Some channels are not usable yet.",
       reasons: {
         missing: "Missing samples",
         flat: "No signal",

@@ -6,7 +6,7 @@ _Bản nháp 2026-11-16, dùng cho hồ sơ đạo đức và để pre-register
 
 | | Study 1 (C4) | Study 2 (C5) |
 |---|---|---|
-| Câu hỏi | Hướng dẫn chất lượng tín hiệu theo từng kênh có giúp người không chuyên thu được EEG dùng được nhanh hơn không? | Cách diễn đạt No-Decision có làm người ra quyết định bỏ sót stroke không? |
+| Câu hỏi | Lý do và lời khuyên theo từng kênh có giúp người không chuyên thu được EEG dùng được nhanh hơn so với chỉ báo chất lượng theo kênh không? | Cách diễn đạt No-Decision có làm người ra quyết định bỏ sót stroke không? |
 | Người tham gia | 16 người đo không có kinh nghiệm EEG + 4 người đeo thiết bị (khoẻ mạnh) | 40–60 người có chuyên môn y (bác sĩ, điều dưỡng, sinh viên y năm cuối) |
 | Thiết kế | Trong-chủ-thể, 2 điều kiện, đối trọng thứ tự | Hỗn hợp: cách diễn đạt (giữa chủ thể) × đầu ra AI (trong chủ thể) |
 | Hình thức | Trực tiếp, khoảng 60 phút | Online, khoảng 25 phút |
@@ -23,7 +23,7 @@ _Bản nháp 2026-11-16, dùng cho hồ sơ đạo đức và để pre-register
 
 Động lực: 32% bản ghi EEG trước viện trong ELECTRA-STROKE không dùng được, chủ yếu do chất lượng tín hiệu. SQI v2 (`backend/sqi_v2.py`) chấm từng kênh và đưa ra lý do kèm hành động sửa.
 
-- **H1 (chính):** với hướng dẫn theo từng kênh (điều kiện G), thời gian đến khi có tín hiệu dùng được ngắn hơn so với giao diện hiện tại (điều kiện B).
+- **H1 (chính):** khi có lý do và lời khuyên cho từng kênh (điều kiện G), thời gian đến khi có tín hiệu dùng được ngắn hơn so với khi chỉ có chỉ báo chất lượng theo kênh (điều kiện B).
 - **H2:** tỉ lệ thu được tín hiệu dùng được trong giới hạn thời gian cao hơn ở G.
 - **H3:** người đo xác định đúng nguyên nhân lỗi nhiều hơn ở G.
 - **H4:** tải nhận thức (NASA-TLX) thấp hơn và khả dụng (SUS) cao hơn ở G.
@@ -45,7 +45,9 @@ _Bản nháp 2026-11-16, dùng cho hồ sơ đạo đức và để pre-register
 ### 1.3 Thiết bị và điều kiện
 
 - **Thiết bị:** Brain-Life Focus+ (2 kênh AF3/AF4), stream BLE vào app (`backend/app/services/device_source.py`).
-- **Điều kiện B (baseline):** giao diện hiện tại gồm sóng EEG, một chỉ số SQI cho cả cửa sổ và trạng thái No-Decision.
+- **Điều kiện B (baseline mạnh, đổi 2026-11-16):** giao diện hiện tại cộng với **chỉ báo chất lượng theo từng kênh**, gồm thanh điểm và nhãn Đạt/Kém, giống chỉ báo tiếp xúc của headband tiêu dùng. **Không** có lý do, lời khuyên hay chỉ định kênh cần sửa.
+  - Lý do đổi: reviewer có thể cho rằng "chỉ báo theo kênh đã có sẵn" (kiểm tra trở kháng trong phần mềm EEG lâm sàng, chỉ báo tiếp xúc trên headband tiêu dùng). Với B mạnh, khác biệt duy nhất giữa hai điều kiện là **lý do kèm hành động**, tức đúng phần đóng góp mới.
+  - URL: `?condition=B`.
 - **Điều kiện G (guidance):** như B, thêm điểm chất lượng từng kênh, lý do và lời khuyên của SQI v2 (`guidance()`).
   - Hai điều kiện dùng chung phần còn lại của giao diện. Người đo không được biết điều kiện nào là "mới".
   - Ngưỡng SQI v2 phải được **đóng băng** (sau khi chỉnh trên TUAR) trước pilot.
@@ -191,7 +193,7 @@ Jabbour et al. (2025, N = 259 bác sĩ) cho thấy khi AI từ chối trả lờ
 |---|---|
 | Ngưỡng SQI v2 đóng băng trên TUAR | Đang chờ dữ liệu |
 | Giao diện điều kiện G: điểm từng kênh + lý do + lời khuyên trong `screen-live.jsx` | Xong 2026-11-16: `ChannelQualityPanel`, message WS `channel_quality` (`app/services/channel_quality.py`) |
-| Chế độ thí nghiệm: chọn điều kiện B/G, ẩn mọi gợi ý điều kiện nào là mới | Một phần: `?condition=B` ẩn bảng chất lượng; chưa khoá thanh điều hướng/tweaks trong lúc chạy study |
+| Chế độ thí nghiệm: chọn điều kiện B/G, ẩn mọi gợi ý điều kiện nào là mới | Một phần: `?condition=B` chỉ hiện chỉ báo theo kênh (không lý do/lời khuyên); chưa khoá thanh điều hướng/tweaks trong lúc chạy study |
 | Log sự kiện có timestamp ISO 8601: điểm SQI, thay đổi trạng thái, đánh dấu của người điều phối | Chưa làm |
 | Lưu bản ghi thô theo mã người tham gia để người chấm đọc mù | Chưa làm |
 | Công cụ chấm từng đoạn 10 s cho người chấm, không hiện điều kiện | Chưa làm |
