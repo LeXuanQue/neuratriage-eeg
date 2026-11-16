@@ -95,3 +95,34 @@ def test_eegnet_outputs_one_logit_per_window() -> None:
     out = net(torch.zeros(5, 1, 18, 512))
 
     assert tuple(out.shape) == (5,)
+
+
+def _synthetic_npz(path: Path, seconds: float = 40.0, dc: float = 100.0) -> None:
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    from eeg_stroke_pipeline import DEFAULT_CHANNELS
+
+    fs, rng = 256.0, np.random.default_rng(0)
+    t = np.arange(int(seconds * fs)) / fs
+    data = np.stack([dc + 20 * np.sin(2 * np.pi * 10 * t + k) + rng.normal(0, 3, t.size)
+                     for k in range(len(DEFAULT_CHANNELS))])
+    np.savez(path, data=data.astype(np.float32), channels=np.array(DEFAULT_CHANNELS), fs=fs)
+
+
+@pytest.mark.unit
+def test_windows_for_file_can_return_the_raw_signal_of_each_kept_window(tmp_path: Path) -> None:
+    f = tmp_path / "rec.npz"
+    _synthetic_npz(f)
+    out = lso._windows_for_file(("p1", "ischemic", str(f), 256.0, 5, None, True))
+    assert out is not None
+    assert out["raw"].shape == out["windows"].shape
+    # raw keeps the DC offset the deployed quality tracker sees; the model input is band-passed
+    assert np.median(out["raw"]) == pytest.approx(100.0, abs=5.0)
+    assert abs(np.median(out["windows"])) < 5.0
+
+
+@pytest.mark.unit
+def test_windows_for_file_omits_raw_by_default(tmp_path: Path) -> None:
+    f = tmp_path / "rec.npz"
+    _synthetic_npz(f)
+    out = lso._windows_for_file(("p1", "ischemic", str(f), 256.0, 5, None))
+    assert out is not None and "raw" not in out

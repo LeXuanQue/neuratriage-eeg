@@ -166,7 +166,10 @@ def _windows_for_file(args: tuple) -> dict | None:
         PipelineConfig, build_feature_row_from_windows, compute_sqi, load_array_file,
         parse_label, preprocess_eeg, preprocess_eeg_for_sqi, reorder_to_target_channels,
     )
-    pid, label_raw, path, fs_m, cap, frac = args
+    # optional 7th item: also return the unfiltered (resampled) signal of every kept window,
+    # which is what the deployed quality tracker scores (E11)
+    pid, label_raw, path, fs_m, cap, frac = args[:6]
+    want_raw = bool(args[6]) if len(args) > 6 else False
     cfg = PipelineConfig()
     data, chans, fs_file = load_array_file(path)
     fs = float(fs_m) if fs_m == fs_m else (fs_file or cfg.fs)
@@ -175,6 +178,11 @@ def _windows_for_file(args: tuple) -> dict | None:
         x_raw = slice_fraction(x_raw, frac)
     x = preprocess_eeg(x_raw, fs, cfg)
     x_sqi = preprocess_eeg_for_sqi(x_raw, fs, cfg)
+    if want_raw:
+        from eeg_stroke_pipeline import resample_eeg
+
+        x_unfiltered = x_raw if abs(fs - cfg.fs) < 1e-6 else resample_eeg(x_raw, fs, cfg.fs)
+    raws = []
     n_win, e_len, step = int(WIN_SEC * cfg.fs), int(cfg.entropy_window_sec * cfg.fs), int(cfg.entropy_step_sec * cfg.fs)
     ends = list(range(n_win, x.shape[1] + 1, step))
     if len(ends) > cap:
@@ -190,9 +198,37 @@ def _windows_for_file(args: tuple) -> dict | None:
                                            channels=list(cfg.channels), fs=cfg.fs, config=cfg)
         wins.append(w.astype(np.float32))
         feats.append({k: v for k, v in f.items() if not k.startswith("sqi_")})
+        if want_raw:
+            raws.append(x_unfiltered[:, end - n_win:end].astype(np.float32))
     if not wins:
         return None
-    return {"pid": pid, "label": parse_label(label_raw), "windows": np.stack(wins), "feats": feats}
+    out = {"pid": pid, "label": parse_label(label_raw), "windows": np.stack(wins), "feats": feats}
+    if want_raw:
+        out["raw"] = np.stack(raws)
+    return out
+
+
+def _jobs(manifest: pd.DataFrame, cap_per_patient: int, want_raw: bool = False) -> list[tuple]:
+    files_per_pid = manifest.groupby("patient_id").size()
+    has_frac = "frac0" in manifest.columns
+    return [(r.patient_id, r.label, r.path, r.fs,
+             max(1, int(np.ceil(cap_per_patient / files_per_pid[r.patient_id]))),
+             (r.frac0, r.frac1) if has_frac else None, want_raw) for r in manifest.itertuples()]
+
+
+def raw_source_windows(name: str, manifest: pd.DataFrame, cap_per_patient: int, workers: int) -> dict:
+    """Unfiltered signal of exactly the windows load_source keeps (same order), cached."""
+    cache = CACHE / f"{name}_cap{cap_per_patient}_raw.npz"
+    if cache.exists():
+        z = np.load(cache, allow_pickle=True)
+        return {k: z[k] for k in z.files}
+    with ProcessPoolExecutor(workers) as ex:
+        res = [r for r in ex.map(_windows_for_file, _jobs(manifest, cap_per_patient, True)) if r is not None]
+    out = {"raw": np.concatenate([r["raw"] for r in res]),
+           "pids": np.concatenate([[r["pid"]] * len(r["raw"]) for r in res])}
+    CACHE.mkdir(parents=True, exist_ok=True)
+    np.savez(cache, **out)
+    return out
 
 
 def load_source(name: str, manifest: pd.DataFrame, cap_per_patient: int, workers: int) -> dict:
@@ -200,13 +236,8 @@ def load_source(name: str, manifest: pd.DataFrame, cap_per_patient: int, workers
     if cache.exists():
         z = np.load(cache, allow_pickle=True)
         return {k: z[k] for k in z.files}
-    files_per_pid = manifest.groupby("patient_id").size()
-    has_frac = "frac0" in manifest.columns
-    jobs = [(r.patient_id, r.label, r.path, r.fs,
-             max(1, int(np.ceil(cap_per_patient / files_per_pid[r.patient_id]))),
-             (r.frac0, r.frac1) if has_frac else None) for r in manifest.itertuples()]
     with ProcessPoolExecutor(workers) as ex:
-        res = [r for r in ex.map(_windows_for_file, jobs) if r is not None]
+        res = [r for r in ex.map(_windows_for_file, _jobs(manifest, cap_per_patient)) if r is not None]
     w = np.concatenate([r["windows"] for r in res])
     feats = pd.DataFrame([f for r in res for f in r["feats"]])
     pids = np.concatenate([[r["pid"]] * len(r["windows"]) for r in res])

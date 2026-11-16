@@ -32,7 +32,7 @@ import conformal_triage as C  # noqa: E402
 
 ALPHAS = (0.05, 0.10, 0.20)
 GUARANTEE_SLACK = 0.02
-WINDOW_CACHE = Path("F:/eeg_extra/cache_lso")
+CAP_PER_PATIENT = 24  # same cap as the cached model windows (conformal_window_probs_*.csv)
 SPLIT_SOURCES = {"S1": ("tianjin", "physionet_eo"), "S2": ("xuanwu", "physionet_eo")}
 
 # Mains frequency of the country each cohort was recorded in. PhysioNet eegmmidb (US) shows a
@@ -108,16 +108,22 @@ def run_gated_split(win: pd.DataFrame, usable: np.ndarray, n_rep: int, seed: int
     return out
 
 
-def split_usable(split: str, win: pd.DataFrame) -> np.ndarray:
-    """SQI v2 usable mask for the cached window probabilities of one split (same order)."""
+def split_usable(split: str, win: pd.DataFrame, workers: int) -> np.ndarray:
+    """SQI v2 usable mask for the cached window probabilities of one split (same order).
+
+    The model's cached windows are band-passed and re-referenced; the deployed tracker scores
+    the raw stream, so the gate runs on the unfiltered signal of the same windows."""
+    from leave_source_out import _manifests, raw_source_windows
+
+    manifests = _manifests(50)
     parts = []
     for source in SPLIT_SOURCES[split]:
-        z = np.load(WINDOW_CACHE / f"{source}_cap24.npz", allow_pickle=True)
+        z = raw_source_windows(source, manifests[source], CAP_PER_PATIENT, workers)
         rows = win[win["source"] == source]
-        if len(rows) != len(z["windows"]) or not np.array_equal(rows["pid"].astype(str).to_numpy(),
-                                                                 z["pids"].astype(str)):
-            raise SystemExit(f"{split}/{source}: cached probabilities and windows are not aligned")
-        parts.append(usable_windows(z["windows"], 256.0, line_freq_for(source)))
+        if len(rows) != len(z["raw"]) or not np.array_equal(rows["pid"].astype(str).to_numpy(),
+                                                             z["pids"].astype(str)):
+            raise SystemExit(f"{split}/{source}: cached probabilities and raw windows are not aligned")
+        parts.append(usable_windows(z["raw"], 256.0, line_freq_for(source)))
         print(f"[{split}] {source}: {parts[-1].mean():.1%} of {len(parts[-1])} windows usable", flush=True)
     return np.concatenate(parts)
 
@@ -127,12 +133,13 @@ def main() -> None:
     ap.add_argument("--splits", nargs="+", default=["S1", "S2"])
     ap.add_argument("--n-rep", type=int, default=2000)
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--workers", type=int, default=2)
     ap.add_argument("--out", default=str(ROOT / "results" / "conformal_quality_gate.json"))
     args = ap.parse_args()
 
     calib = ROOT / "results" / "sqi_v2_calibration.json"
     report = {
-        "condition": "as conformal_no_decision.py, windows kept only if SQI v2 score >= CHANNEL_OK",
+        "condition": "as conformal_no_decision.py, windows kept only if SQI v2 on the raw signal >= CHANNEL_OK",
         "drift_ramp_source": str(calib) if calib.exists() else "default (synthetic)",
         "n_rep": args.n_rep, "drop_rule": f"guarantee_holds iff mean FAR <= alpha + {GUARANTEE_SLACK}",
         "splits": {},
@@ -140,7 +147,7 @@ def main() -> None:
     for split in args.splits:
         win = pd.read_csv(ROOT / "results" / f"conformal_window_probs_{split}.csv")
         win = win.sort_values("source", key=lambda s: s.map(SPLIT_SOURCES[split].index), kind="stable")
-        report["splits"][split] = run_gated_split(win.reset_index(drop=True), split_usable(split, win),
+        report["splits"][split] = run_gated_split(win.reset_index(drop=True), split_usable(split, win, args.workers),
                                                   args.n_rep, args.seed)
     Path(args.out).write_text(json.dumps(report, indent=2), encoding="utf-8")
     for split, r in report["splits"].items():
