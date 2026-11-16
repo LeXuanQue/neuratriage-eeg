@@ -126,3 +126,39 @@ def test_typical_scale_is_the_median_epoch_std_so_a_flat_epoch_stays_flat() -> N
     x[:, : 256 * 10] = 0.0  # first epoch flat (lost contact)
     s = R.typical_scale(x, 256.0)
     assert s[0] == pytest.approx(1.0, rel=0.1)  # not pulled to 0 by the flat epoch
+
+
+@pytest.mark.unit
+def test_score_aligns_epochs_by_chunk_arrival_times(tmp_path: Path) -> None:
+    """Review 2026-11-17: the first sample arrives 5 s after the session opens and a BLE
+    dropout adds 10 s without samples; TTU must follow wall-clock time, not sample index."""
+    import csv
+
+    t_open = R.iso_seconds("2026-11-17T09:00:00.000Z")
+    fs, n = 256.0, 256 * 200
+    # chunks of 1 s: samples 0..99 s arrive from t_open+5, samples 100..199 s after a 10 s gap
+    starts = np.arange(0, n, 256)
+    times = t_open + 5.0 + starts / fs + np.where(starts >= 256 * 100, 10.0, 0.0)
+    (tmp_path / "raw").mkdir()
+    np.savez(tmp_path / "raw" / "r1.npz", data=np.zeros((2, n), np.float32), fs=np.float64(fs),
+             channels=np.array(["AF3", "AF4"]), chunk_start_sample=starts, chunk_unix_time=times)
+    (tmp_path / "raw_key.jsonl").write_text(json.dumps({
+        "raw_id": "r1", "participant": "P07", "condition": "G", "trial_at_start": 1, "fs": fs,
+        "channels": ["AF3", "AF4"], "n_samples": n, "started_utc": "2026-11-17T09:00:00.000Z"}) + "\n",
+        encoding="utf-8")
+    # trial starts at wall clock t_open + 30 s
+    (tmp_path / "P07.jsonl").write_text(json.dumps(
+        {"type": "trial_start", "trial": 1, "condition": "G", "server_ts": "2026-11-17T09:00:30.000Z"}) + "\n",
+        encoding="utf-8")
+    (tmp_path / "rating").mkdir()
+    with open(tmp_path / "rating" / "epoch_key.csv", "w", newline="", encoding="utf-8") as k, \
+            open(tmp_path / "r1.csv", "w", newline="", encoding="utf-8") as r:
+        kw, rw = csv.writer(k), csv.writer(r)
+        kw.writerow(["epoch_id", "raw_id", "start_sample"])
+        rw.writerow(["epoch_id", "usable", "comment"])
+        for i, s in enumerate(range(0, 200, 10)):
+            kw.writerow([f"e{i}", "r1", s * 256])
+            rw.writerow([f"e{i}", int(s >= 100), ""])  # usable only after the dropout
+    res = R.score(tmp_path, tmp_path / "r1.csv")
+    # sample 100 s arrives at t_open + 5 + 100 + 10 = +115 s -> TTU = 115 - 30 = 85 s
+    assert res["trials"][0]["ttu_sec"] == pytest.approx(85.0)

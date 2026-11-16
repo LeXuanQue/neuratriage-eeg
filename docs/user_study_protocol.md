@@ -200,6 +200,14 @@ Jabbour et al. (2025, N = 259 bác sĩ) cho thấy khi AI từ chối trả lờ
 | Tình huống giả định và màn hình đầu ra AI (Study 2) | Chưa làm, cần cố vấn lâm sàng |
 | Nền tảng khảo sát online cho Study 2 | Chọn theo trường |
 
+**Lưu ý vận hành (rút từ security review 2026-11-17):**
+- URL study **bắt buộc** có cả `participant` và `condition`. Thiếu `condition` thì chế độ study không bật, để không có lượt nào bị âm thầm chạy ở điều kiện G.
+- Nếu badge hiện **"NOT RECORDING"** hoặc chuyển đỏ (có sự kiện chưa gửi được), dừng lượt và kiểm tra trước khi tiếp tục.
+- Tín hiệu thô chỉ được ghi xuống đĩa khi phiên đóng. Trong lúc đo **không tải lại trang, không cho máy ngủ, không tắt server**.
+- Chỉ giao cho người chấm thư mục `rating/epochs/` và `ratings_template.csv`. **Không** giao `raw_key.jsonl`, `rating/epoch_key.csv` hay các file `P*.jsonl`, vì những file này chứa điều kiện.
+- Không gõ thông tin nhận dạng vào sự kiện `note`.
+- Mốc thời gian dùng giờ đến của từng chunk ở server, nên độ trễ kết nối BLE và các lần rớt kết nối không làm lệch TTU.
+
 ## 5. Lịch (khớp `docs/uist2027_plan.md`)
 
 | Tuần | Việc |

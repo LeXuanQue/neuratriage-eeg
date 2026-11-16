@@ -299,6 +299,10 @@
           }
           setFrame((prev) => ({ ...(prev || fallbackFrame), channelQuality: payload }));
         } else if (payload.type === "ready") {
+          // Study mode: the server says whether it keeps the raw signal for blinded rating.
+          if (window.NTStudy && window.NTStudy.active && payload.study_recording === false) {
+            window.NTStudy.markNotRecording();
+          }
           const readyChannels = cleanChannels(payload.device_channels || payload.mapped_channels || deviceChannelsRef.current);
           deviceChannelsRef.current = readyChannels;
           setFrame((prev) => ({

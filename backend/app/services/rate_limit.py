@@ -58,3 +58,6 @@ class RateLimiter:
 
 login_limiter = RateLimiter(max_calls=5, window_sec=60)
 infer_limiter = RateLimiter(max_calls=20, window_sec=60)
+# Study event log: the UI posts ~1 quality event per second per client, so the limit must be
+# generous enough never to drop real study data while still capping a runaway client.
+study_limiter = RateLimiter(max_calls=1200, window_sec=60)

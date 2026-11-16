@@ -17,10 +17,10 @@ if str(BACKEND_DIR) not in sys.path:
 @pytest.fixture(autouse=True)
 def reset_rate_limiters():
     """Clear in-memory rate limit buckets before every test so tests are isolated."""
-    from app.services.rate_limit import infer_limiter, login_limiter
+    from app.services.rate_limit import infer_limiter, login_limiter, study_limiter
 
-    login_limiter.reset()
-    infer_limiter.reset()
+    for limiter in (login_limiter, infer_limiter, study_limiter):
+        limiter.reset()
     yield
-    login_limiter.reset()
-    infer_limiter.reset()
+    for limiter in (login_limiter, infer_limiter, study_limiter):
+        limiter.reset()

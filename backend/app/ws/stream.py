@@ -289,6 +289,7 @@ async def _run_replay(
     while pos < n_total:
         chunk = data[:, pos : pos + chunk_samples]
         pos += chunk_samples
+        _record(recorder, chunk, replay_channels, fs)  # before any demo artifact injection
         # Demo control: when artifact injection is toggled on, corrupt the chunk
         # so SQI drops and the UI enters No-Decision. The corrupted chunk is what
         # gets both displayed (raw_chunk) and scored, so the waveform and the SQI
@@ -308,7 +309,6 @@ async def _run_replay(
             )
         except Exception:
             return
-        _record(recorder, chunk, replay_channels, fs)
         if not await _send_quality(ws, quality, chunk):
             return
         try:
@@ -546,6 +546,8 @@ async def stream(ws: WebSocket, session_id: str) -> None:
                         "mapped_channels": list(DEFAULT_CHANNELS),
                         "device_channels": detector_channels,
                         "replay_npz": str(replay_path) if replay_path else None,
+                        # Study mode: tells the facilitator at once whether raw data is kept.
+                        "study_recording": recorder is not None,
                     }
                 )
                 if source_kind == "device":
@@ -600,6 +602,7 @@ async def stream(ws: WebSocket, session_id: str) -> None:
                     continue
                 try:
                     arr = np.asarray(msg.get("chunk", []), dtype=float)
+                    _record(recorder, arr, detector_channels, detector.fs)  # before demo artifacts
                     if artifact_state.get("on") and arr.ndim == 2 and arr.size:
                         arr = apply_synthetic_artifact(
                             arr, detector.fs, float(artifact_state.get("intensity", 1.0))
@@ -614,7 +617,6 @@ async def stream(ws: WebSocket, session_id: str) -> None:
                     logger.exception("Mapping error for session %s", session_id)
                     await ws.send_json({"type": "error", "message": str(exc)})
                     continue
-                _record(recorder, arr, detector_channels, detector.fs)
                 if not await _send_quality(ws, client_quality, arr):
                     break
 
@@ -663,7 +665,8 @@ async def stream(ws: WebSocket, session_id: str) -> None:
         sm.close_session(session_id)
         if recorder is not None:
             try:
-                recorder.close()
+                # off the event loop: compressing 15 min of data must not stall other sessions
+                await asyncio.to_thread(recorder.close)
             except Exception:
                 logger.exception("Study recorder close failed for %s", session_id)
         _finalise_session_row(

@@ -28,8 +28,12 @@ The task is binary ischemic stroke vs. non-stroke (50 + 50 records, patient-leve
   suitable for continuous monitoring.
 - **The live headband (Brain-Life Focus+, 2 channels AF3/AF4) drives quality gating and
   No-Decision only.** Classification uses the 18-channel replay path.
-- **Not done yet:** a stroke cohort recorded on the same device as its controls, and a user study
-  of the No-Decision interaction.
+- **No-Decision with a guarantee.** Patient-level conformal prediction keeps the realised false-alert
+  rate at or below the target on held-out sources (7.7% at α = 0.1), where the fixed thresholds reach
+  30% and window-level calibration up to 52%; the price is that many stroke patients are withheld
+  (`scripts/conformal_no_decision.py`, `scripts/conformal_calibration_size.py`).
+- **Not done yet:** a stroke cohort recorded on the same device as its controls, the labelled-artifact
+  evaluation of the per-channel quality index (TUAR), and the two user studies.
 
 Details, safe claim language and limitations: [`docs/uist_evidence.md`](docs/uist_evidence.md).
 The generated `results/` folder is not versioned, so the scripts above need the local datasets.
@@ -128,6 +132,16 @@ TUH data is distributed under the corpus data-use agreement and is not redistrib
 Streaming from the Brain-Life Focus+ needs Bluetooth LE (`bleak`, imported lazily; the app and
 tests run without it). See [`docs/device_bring_up.md`](docs/device_bring_up.md).
 
+## Study mode (user studies)
+
+`app.html?participant=P07&condition=G&trial=1&source=device` runs Study 1 of
+[`docs/user_study_protocol.md`](docs/user_study_protocol.md): navigation and tweaks are hidden,
+`condition=B` shows only the per-channel indicator (no reasons or advice), events are logged to
+`data/study_logs/P07.jsonl`, and the raw signal is kept under an opaque id for blinded rating
+(`scripts/study_rating.py prepare` / `score`). Facilitator hotkeys: Ctrl+Shift+S / E / A / R
+(trial start, trial end, operator action, fault resolved). Participant codes must look like `P07`;
+`data/study_logs/` is never versioned.
+
 ## Documentation
 
 | Topic | File |
@@ -135,7 +149,9 @@ tests run without it). See [`docs/device_bring_up.md`](docs/device_bring_up.md).
 | Claims, metrics, limitations | [`docs/uist_evidence.md`](docs/uist_evidence.md) |
 | Technical report | [`docs/technical_report.md`](docs/technical_report.md) |
 | Same-rig (TUH) runbook | [`docs/tuh_samerig.md`](docs/tuh_samerig.md) |
-| Plan toward the full paper | [`docs/full_paper_plan.md`](docs/full_paper_plan.md) |
+| Plan toward the full paper | [`docs/full_paper_plan.md`](docs/full_paper_plan.md), [`docs/uist2027_plan.md`](docs/uist2027_plan.md) |
+| Paper outline and claim → evidence map | [`docs/paper_outline.md`](docs/paper_outline.md); draft in [`paper/uist2027/`](paper/uist2027/) |
+| User study protocol | [`docs/user_study_protocol.md`](docs/user_study_protocol.md) |
 | Literature reviews | [`docs/lit_review.md`](docs/lit_review.md), [`docs/lit_review_eeg_fm.md`](docs/lit_review_eeg_fm.md) |
 | Deployment | [`docs/deploy.md`](docs/deploy.md) |
 

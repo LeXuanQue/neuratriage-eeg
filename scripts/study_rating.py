@@ -168,6 +168,20 @@ def _usable_by_recording(root: Path, ratings: Path) -> Dict[str, Tuple[np.ndarra
             for rid, v in ((rid, sorted(v)) for rid, v in rows.items())}
 
 
+def sample_unix_times(samples: np.ndarray, rec: dict, root: Path) -> np.ndarray:
+    """Wall-clock time of sample indices: from the per-chunk arrival times stored with the
+    recording (robust to BLE connection delay and dropouts), else started_utc + n / fs."""
+    path = root / "raw" / f"{rec['raw_id']}.npz"
+    samples = np.asarray(samples, dtype=float)
+    if path.exists():
+        z = np.load(path)
+        if "chunk_start_sample" in z.files and len(z["chunk_start_sample"]):
+            cs, ct, fs = z["chunk_start_sample"], z["chunk_unix_time"], float(z["fs"])
+            idx = np.clip(np.searchsorted(cs, samples, side="right") - 1, 0, len(cs) - 1)
+            return ct[idx] + (samples - cs[idx]) / fs
+    return iso_seconds(rec["started_utc"]) + samples / rec["fs"]
+
+
 def score(root: Path, ratings: Path, ratings2: Optional[Path] = None) -> dict:
     raw_key = [json.loads(x) for x in (root / "raw_key.jsonl").read_text(encoding="utf-8").splitlines()]
     usable = _usable_by_recording(root, ratings)
@@ -176,17 +190,15 @@ def score(root: Path, ratings: Path, ratings2: Optional[Path] = None) -> dict:
         participant = log.stem
         events = [json.loads(x) for x in log.read_text(encoding="utf-8").splitlines()]
         sessions = [k for k in raw_key if k["participant"] == participant]
+        spans = {k["raw_id"]: sample_unix_times(np.array([0, k["n_samples"]]), k, root) for k in sessions}
         for tr in trials_from_events(events):
-            rec = next((k for k in sessions if iso_seconds(k["started_utc"]) <= tr["start"]
-                        <= iso_seconds(k["started_utc"]) + k["n_samples"] / k["fs"]), None)
+            rec = next((k for k in sessions if spans[k["raw_id"]][0] - 60 <= tr["start"] <= spans[k["raw_id"]][1]), None)
             if rec is None or rec["raw_id"] not in usable:
                 rows.append({"participant": participant, "condition": tr["condition"], "trial": tr["trial"],
                              "ttu_sec": "", "censored": "", "note": "no rated recording"})
                 continue
-            t0 = iso_seconds(rec["started_utc"])
             starts, ok = usable[rec["raw_id"]]
-            ttu, censored = time_to_usable(starts / rec["fs"], ok, tr["start"] - t0,
-                                           None if tr["end"] is None else tr["end"] - t0)
+            ttu, censored = time_to_usable(sample_unix_times(starts, rec, root), ok, tr["start"], tr["end"])
             rows.append({"participant": participant, "condition": tr["condition"], "trial": tr["trial"],
                          "ttu_sec": round(ttu, 1), "censored": censored, "note": ""})
     out = {"trials": rows}

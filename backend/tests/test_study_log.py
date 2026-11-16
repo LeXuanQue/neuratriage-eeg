@@ -65,3 +65,37 @@ def test_oversized_payload_is_rejected(client: TestClient) -> None:
 
 def test_requires_login(client: TestClient) -> None:
     assert client.post("/api/study/events", json=_event()).status_code == 401
+
+
+# ------------------------------------------------------------------ security review 2026-11-17
+@pytest.mark.parametrize("participant", ["P٠٧", "P０７"])
+def test_participant_code_must_use_ascii_digits(client: TestClient, participant: str) -> None:
+    r = client.post("/api/study/events", json=_event(participant=participant), headers=_auth(client))
+    assert r.status_code == 422
+
+
+def test_each_event_records_which_account_logged_it(client: TestClient, tmp_path: Path) -> None:
+    client.post("/api/study/events", json=_event(), headers=_auth(client))
+    line = json.loads((tmp_path / "P07.jsonl").read_text(encoding="utf-8").splitlines()[0])
+    assert line["logged_by"]
+
+
+def test_events_are_rate_limited(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.services import rate_limit
+
+    monkeypatch.setattr(rate_limit.study_limiter, "_max", 3)
+    rate_limit.study_limiter.reset()
+    h = _auth(client)
+    codes = [client.post("/api/study/events", json=_event(), headers=h).status_code for _ in range(5)]
+    assert codes[:3] == [200, 200, 200] and codes[3:] == [429, 429]
+    rate_limit.study_limiter.reset()
+
+
+def test_refuses_to_log_when_the_disk_is_nearly_full(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    import shutil
+    from collections import namedtuple
+
+    usage = namedtuple("usage", "total used free")
+    monkeypatch.setattr(shutil, "disk_usage", lambda _p: usage(10**12, 10**12 - 10**6, 10**6))
+    r = client.post("/api/study/events", json=_event(), headers=_auth(client))
+    assert r.status_code == 507

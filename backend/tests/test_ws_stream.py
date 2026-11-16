@@ -182,7 +182,8 @@ def test_ws_stream_records_raw_signal_for_a_study_session(tmp_path, monkeypatch)
         with client.websocket_connect(f"/ws/stream/{session_id}?token={token}") as ws:
             ws.send_json({"type": "init", "device_channels": ["AF3", "AF4"], "fs": 256,
                           "study": {"participant": "P07", "trial": 1, "condition": "B"}})
-            assert ws.receive_json()["type"] == "ready"
+            ready = ws.receive_json()
+            assert ready["type"] == "ready" and ready["study_recording"] is True
             for _ in range(3):
                 ws.send_json({"type": "data", "chunk": rng.normal(scale=20e-6, size=(2, 256)).tolist()})
             ws.send_json({"type": "close"})
@@ -333,4 +334,17 @@ def test_ws_stream_reports_channel_count_mismatch() -> None:
             msg = ws.receive_json()
             assert msg["type"] == "error"
             assert "channel count" in msg["message"].lower()
+            ws.send_json({"type": "close"})
+
+
+def test_ws_ready_reports_an_invalid_study_block_as_not_recording(tmp_path, monkeypatch) -> None:
+    """Review 2026-11-17: a malformed study block must be visible to the facilitator at once."""
+    monkeypatch.setattr(get_settings(), "study_log_dir", str(tmp_path))
+    with TestClient(app) as client:
+        token = _token(client)
+        with client.websocket_connect(f"/ws/stream/{uuid.uuid4().hex}?token={token}") as ws:
+            ws.send_json({"type": "init", "device_channels": ["AF3", "AF4"], "fs": 256,
+                          "study": {"participant": "P07", "trial": "1", "condition": "G"}})
+            ready = ws.receive_json()
+            assert ready["type"] == "ready" and ready["study_recording"] is False
             ws.send_json({"type": "close"})
