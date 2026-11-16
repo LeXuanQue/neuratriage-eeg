@@ -71,8 +71,12 @@ Riemannian tangent-space classifiers~\cite{barachant2012} are a strong, fast bas
 
 \paragraph{Signal quality for wearable EEG.}
 Quality indices for single-channel wearable EEG combine amplitude, spectral and artifact-specific features~\cite{grosselin2019}; the aperiodic spectral slope flags artifacts in single-channel recordings~\cite{fasol2023}; and the TUH Artifact Corpus provides channel-level artifact labels from one clinical system~\cite{hamid2020tuar,obeid2016tuh}.
+Contact quality can also be monitored online from mains interference on a wearable EEG device, although the authors note that no accurate and reliable tool for monitoring contact during recording was yet available~\cite{casadei2022}.
 These works score quality. We use per-channel quality as an \emph{interaction}: a reason, an action, and a target electrode, evaluated by whether novices acquire usable signal faster.
-\TODO{Survey guided-capture interfaces for non-experts (e.g., guided medical imaging capture) and cite verified work here.}
+
+\paragraph{Guiding non-experts to acquire clinical signals.}
+The closest precedents come from ultrasound. Real-time prescriptive guidance let nurses without ultrasonography experience acquire echocardiograms of diagnostic quality for limited questions~\cite{narang2021}, and the same approach has been applied to guide novices performing trauma ultrasound~\cite{chiu2023}.
+These systems guide the probe towards a target image; EEG has no target image, so our guidance instead names the failing electrode and the physical cause (contact, drift, muscle, mains) and asks for one corrective action. We are not aware of a user study comparing such actionable feedback with the per-electrode contact indicators that EEG devices typically show; Study~1 makes that comparison.
 
 \paragraph{Selective prediction and conformal guarantees.}
 Conformal prediction gives distribution-free, finite-sample coverage~\cite{angelopoulos2021gentle}, and conformal risk control extends it to bounded losses~\cite{angelopoulos2022crc}.
