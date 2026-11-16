@@ -138,6 +138,38 @@ def test_ws_stream_artifact_toggle_drops_sqi_into_no_decision() -> None:
     assert min(sqis) < 0.55, f"artifact should push SQI below the gate, got min {min(sqis):.3f}"
 
 
+def test_ws_stream_sends_per_channel_quality_for_client_data() -> None:
+    """Condition G of Study 1 needs per-channel SQI v2 on the raw device channels."""
+    rng = np.random.default_rng(2)
+    fs = 256
+    session_id = uuid.uuid4().hex
+    device_channels = ["AF3", "AF4"]
+    quality: list[dict] = []
+
+    with TestClient(app) as client:
+        token = _token(client)
+        with client.websocket_connect(f"/ws/stream/{session_id}?token={token}") as ws:
+            ws.send_json({"type": "init", "device_channels": device_channels, "fs": fs})
+            assert ws.receive_json()["type"] == "ready"
+            for _ in range(6):
+                chunk = rng.normal(scale=20e-6, size=(2, fs))
+                chunk[1] = 0.0  # AF4 lost contact
+                ws.send_json({"type": "data", "chunk": chunk.tolist()})
+            ws.send_json({"type": "close"})
+            while True:
+                try:
+                    msg = ws.receive_json()
+                except Exception:
+                    break
+                if msg.get("type") == "channel_quality":
+                    quality.append(msg)
+
+    assert quality, "expected channel_quality messages"
+    last = quality[-1]
+    assert [c["name"] for c in last["channels"]] == device_channels
+    assert last["guidance"]["channel"] == "AF4"
+
+
 def test_ws_stream_rejects_data_before_init() -> None:
     session_id = uuid.uuid4().hex
     with TestClient(app) as client:

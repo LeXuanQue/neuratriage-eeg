@@ -61,6 +61,70 @@ window.ModelInfoCard = function ModelInfoCard({t, info, error, compact}) {
   );
 };
 
+// Study 1 (docs/user_study_protocol.md): condition B hides per-channel guidance,
+// condition G (default, also the normal product) shows it. Read once from ?condition=.
+const NT_STUDY_CONDITION = (new URLSearchParams(window.location.search).get("condition") || "G").toUpperCase();
+const NT_CHANNEL_OK = 0.7; // mirrors sqi_v2.CHANNEL_OK
+
+function qualityColor(score) {
+  return score >= 0.85 ? "var(--ns)" : score >= NT_CHANNEL_OK ? "var(--is)" : "var(--hs)";
+}
+
+/**
+ * Per-channel SQI v2 with one actionable tip (condition G).
+ * @param {{quality: ?{channels: {name: string, score: number, reasons: string[]}[],
+ *   worst_channel: string, guidance: ?{channel: string, reason: string, advice: string}},
+ *   t: object}} props
+ */
+window.ChannelQualityPanel = function ChannelQualityPanel({quality, t}) {
+  const q = t.quality;
+  if (!quality) {
+    return (
+      <div className="panel" style={{padding:14}}>
+        <div className="nt-cq-title">{q.title}</div>
+        <div style={{fontSize:11.5, color:"var(--ink-3)"}}>{q.waiting}</div>
+      </div>
+    );
+  }
+  const tip = quality.guidance;
+  const many = quality.channels.length > 4;
+  return (
+    <div className="panel" style={{padding:14}}>
+      <div className="nt-cq-title">{q.title}</div>
+      <div aria-live="polite" role="status">
+        {tip ? (
+          <div className="nt-cq-fix">
+            <div style={{display:"flex", alignItems:"baseline", gap:10, marginBottom:6}}>
+              <span style={{fontSize:10.5, textTransform:"uppercase", letterSpacing:"0.10em", color:"var(--hs)", fontWeight:600}}>{q.fixTitle}</span>
+              <span className="mono" style={{fontSize:22, fontWeight:700, color:"var(--ink)", letterSpacing:"-0.01em"}}>{tip.channel}</span>
+              <span style={{fontSize:12, color:"var(--ink-2)"}}>{q.reasons[tip.reason] || tip.reason}</span>
+            </div>
+            <div style={{fontSize:13, lineHeight:1.5, color:"var(--ink)"}}>{q.advice[tip.reason] || tip.advice}</div>
+          </div>
+        ) : (
+          <div style={{fontSize:12, color:"var(--ns)", marginBottom:10}}>{q.allGood}</div>
+        )}
+      </div>
+      <div style={{display:"grid", gridTemplateColumns: many ? "1fr 1fr" : "1fr", gap: many ? "4px 14px" : 8}}>
+        {quality.channels.map(ch => {
+          const color = qualityColor(ch.score);
+          const isWorst = tip && ch.name === tip.channel;
+          const label = ch.reasons.length ? (q.reasons[ch.reasons[0]] || ch.reasons[0]) : q.ok;
+          return (
+            <div key={ch.name} className={`nt-cq-row${isWorst ? " is-worst" : ""}`}>
+              <span className="mono" style={{fontSize: many ? 10.5 : 12, fontWeight:600, color:"var(--ink)"}}>{ch.name}</span>
+              <div className="nt-cq-bar" aria-hidden="true">
+                <div style={{width:(Math.max(0, Math.min(1, ch.score)) * 100) + "%", background:color}}/>
+              </div>
+              <span style={{fontSize: many ? 10 : 11, color: ch.reasons.length ? color : "var(--ink-3)", whiteSpace:"nowrap"}}>{label}</span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
 window.LiveMonitor = function LiveMonitor({frame, t, lang, channels, animated, accent, demo}) {
   // A2: use device channels + raw WS buffer when stream is connected
   const hasRawData = !!(frame.rawBuffer && frame.rawBuffer.length > 0);
@@ -424,6 +488,11 @@ window.LiveMonitor = function LiveMonitor({frame, t, lang, channels, animated, a
 
       {/* RIGHT — risk + recommendation + sqi + history */}
       <div className="nt-live-side">
+        {/* Per-channel quality + operator tip (Study 1 condition G; hidden in B) */}
+        {NT_STUDY_CONDITION !== "B" && hasRawData && (
+          <window.ChannelQualityPanel quality={frame.channelQuality || null} t={t}/>
+        )}
+
         {/* Risk gauge */}
         <div className="panel" style={{padding:18}}>
           <div style={{display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:14}}>

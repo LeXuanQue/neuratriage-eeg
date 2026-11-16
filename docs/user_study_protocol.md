@@ -190,8 +190,8 @@ Jabbour et al. (2025, N = 259 bác sĩ) cho thấy khi AI từ chối trả lờ
 | Việc | Trạng thái |
 |---|---|
 | Ngưỡng SQI v2 đóng băng trên TUAR | Đang chờ dữ liệu |
-| Giao diện điều kiện G: điểm từng kênh + lý do + lời khuyên trong `screen-live.jsx` | Chưa làm |
-| Chế độ thí nghiệm: chọn điều kiện B/G, ẩn mọi gợi ý điều kiện nào là mới | Chưa làm |
+| Giao diện điều kiện G: điểm từng kênh + lý do + lời khuyên trong `screen-live.jsx` | Xong 2026-11-16: `ChannelQualityPanel`, message WS `channel_quality` (`app/services/channel_quality.py`) |
+| Chế độ thí nghiệm: chọn điều kiện B/G, ẩn mọi gợi ý điều kiện nào là mới | Một phần: `?condition=B` ẩn bảng chất lượng; chưa khoá thanh điều hướng/tweaks trong lúc chạy study |
 | Log sự kiện có timestamp ISO 8601: điểm SQI, thay đổi trạng thái, đánh dấu của người điều phối | Chưa làm |
 | Lưu bản ghi thô theo mã người tham gia để người chấm đọc mù | Chưa làm |
 | Công cụ chấm từng đoạn 10 s cho người chấm, không hiện điều kiện | Chưa làm |

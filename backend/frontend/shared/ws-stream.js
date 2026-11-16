@@ -190,6 +190,9 @@
     const rawBufferRef = React.useRef(null);
     const deviceChannelsRef = React.useRef(DEFAULT_DEVICE_CHANNELS);
     const artifactOnRef = React.useRef(false);
+    // Latest per-channel SQI v2 message; kept in a ref because every "event"
+    // rebuilds the frame from scratch and would otherwise drop it.
+    const channelQualityRef = React.useRef(null);
     const initialArtifactRef = React.useRef(false);
     initialArtifactRef.current = !!artifactOn;
 
@@ -203,6 +206,7 @@
       let opened = false;
       rawBufferRef.current = null;
       artifactOnRef.current = false;
+      channelQualityRef.current = null;
       deviceChannelsRef.current = cleanChannels(requestedChannels);
       // Replay mode: server reads a stored .npz and pumps chunks itself, so
       // the FE just listens. No client-side synthetic generator runs.
@@ -270,7 +274,11 @@
             rawSource: useReplay ? "replay" : "raw",
             hasModelEvent: true,
             artifactOn: artifactOnRef.current,
+            channelQuality: channelQualityRef.current,
           });
+        } else if (payload.type === "channel_quality") {
+          channelQualityRef.current = payload;
+          setFrame((prev) => ({ ...(prev || fallbackFrame), channelQuality: payload }));
         } else if (payload.type === "ready") {
           const readyChannels = cleanChannels(payload.device_channels || payload.mapped_channels || deviceChannelsRef.current);
           deviceChannelsRef.current = readyChannels;
