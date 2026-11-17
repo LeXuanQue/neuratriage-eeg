@@ -68,3 +68,6 @@ tools/
 
 # Study 1 participant event logs (pseudonymous, never versioned)
 data/study_logs/
+
+# LaTeX build output (TinyTeX)
+paper/uist2027/build/

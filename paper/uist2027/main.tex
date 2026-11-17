@@ -153,7 +153,7 @@ Every second, \sqiv{} scores the last 4\,s of each raw device channel. All featu
   \item \emph{muscle}: 35--70\,Hz power relative to 1--35\,Hz (mains removed), or a whitened spectrum (aperiodic exponent below 0.6);
   \item \emph{transient}: excess kurtosis;
   \item \emph{drift}: the variance below 0.5\,Hz relative to what the channel's own aperiodic $1/f$ fit predicts there,
-  $\Delta_{\text{drift}} = \log_{10}\!\big(P_{<0.5\,\text{Hz}} / \int_{1/T}^{0.5} 10^{b} f^{-\chi}\,df\big)$,
+  \[\Delta_{\text{drift}} = \log_{10}\frac{P_{<0.5\,\text{Hz}}}{\int_{1/T}^{0.5} 10^{b} f^{-\chi}\,df},\]
   where $\chi$ and $b$ are fitted on 2--40\,Hz with the alpha and mains bands excluded.
 \end{itemize}
 Each feature maps to a 0--1 severity through a ramp; the channel score is one minus the weighted severities, and a reason is shown once its severity passes the ramp midpoint.
