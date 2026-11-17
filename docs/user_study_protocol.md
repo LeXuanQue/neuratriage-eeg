@@ -199,7 +199,7 @@ _Bộ hồ sơ đạo đức soạn từ mục này (đề cương tóm tắt, p
 | Log sự kiện có timestamp ISO 8601: điểm SQI, thay đổi trạng thái, đánh dấu của người điều phối | Xong 2026-11-17: `POST /api/study/events` → `data/study_logs/P07.jsonl` (gitignored, mã bắt buộc dạng `P\d{2,3}`). Tự ghi mỗi tin chất lượng (~1 Hz, kèm lời khuyên đang hiện). Phím tắt cho người điều phối: Ctrl+Shift+S bắt đầu lượt, E kết thúc lượt (tăng số lượt), A người đo vừa sửa, R lỗi đã hết. **Tải lại trang thì số lượt lấy lại từ URL**, nên mỗi lượt mới phải đặt `trial=` đúng |
 | Lưu bản ghi thô theo mã người tham gia để người chấm đọc mù | Xong 2026-11-17: mỗi phiên WS ở chế độ study → `data/study_logs/raw/<hex ngẫu nhiên>.npz`. Bảng đối chiếu id → người tham gia/điều kiện/giờ bắt đầu ở `raw_key.jsonl`, người chấm **không** được xem |
 | Công cụ chấm từng đoạn 10 s cho người chấm, không hiện điều kiện | Xong 2026-11-17: `scripts/study_rating.py prepare` cắt đoạn 10 s, xáo trộn giữa bản ghi và điều kiện, vẽ PNG với trục dọc cố định theo bản ghi (để đoạn phẳng hay trôi nền hiện đúng bản chất), tạo `ratings_template.csv`. Sau khi chấm: `score --ratings r1.csv [--ratings2 r2.csv]` → TTU từng lượt, có cắt ở 8 phút, và Cohen's κ → `results/study1_ttu.csv` |
-| Tình huống giả định và màn hình đầu ra AI (Study 2) | Chưa làm, cần cố vấn lâm sàng |
+| Tình huống giả định và màn hình đầu ra AI (Study 2) | Màn hình xong 2026-11-17 (`scripts/study2_screens.py` → `docs/study2/screens/`), câu chữ chờ duyệt. 24 tình huống chưa viết, cần cố vấn lâm sàng |
 | Nền tảng khảo sát online cho Study 2 | Chọn theo trường |
 
 **Lưu ý vận hành (rút từ security review 2026-11-17):**
@@ -215,7 +215,7 @@ _Bộ hồ sơ đạo đức soạn từ mục này (đề cương tóm tắt, p
 | Tuần | Việc |
 |---|---|
 | 1–2 (từ 16/11) | Điền các mục `[…]`, nộp hồ sơ đạo đức, tìm cố vấn lâm sàng và người chấm |
-| 3–6 | Làm các điều kiện tiên quyết ở mục 4, viết tình huống giả định, pre-register (OSF) |
+| 3–6 | Làm các điều kiện tiên quyết ở mục 4, viết tình huống giả định, pre-register (OSF, bản nháp: [`docs/prereg/osf_preregistration.md`](prereg/osf_preregistration.md)) |
 | 7–9 | Pilot Study 1 (2–3 người) và Study 2 (3–5 người), chỉnh tài liệu, **khoá protocol** |
 | 9–14 | Chạy chính thức cả hai study, chấm TTU mù |
 | 14–16 | Phân tích theo đúng kế hoạch đã pre-register |

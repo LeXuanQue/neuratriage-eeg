@@ -129,3 +129,11 @@ Vấn đề: 86% kênh-cửa sổ eyem trên TUAR không có lý do nào.
 - (d) **trượt phần IS/NS:** `eye` bật trên 7.5% kênh-cửa sổ IS và 1.5% NS (gấp 5 lần). TUSL slow 4.1% so với bckg 6.8% thì đạt.
 - **Kết luận:** không đưa vào app. `SqiV2Config.eye_reason = False` mặc định, code và test giữ lại. Trong paper: một câu kết quả âm ở đoạn "Reasons and target channel". Bài học giống scorer học: theo từng kênh, cử động mắt và slowing của stroke trông như nhau. Muốn tách được cần đặc trưng không gian (trước trán so với phía sau, đối xứng FP1/FP2), mà headband 2 kênh trán không có.
 - Số liệu: `results/eye_reason_eval.json`, `results/eye_reason_eval_parts.json`.
+
+## 8. Tài liệu nộp kèm (2026-11-17)
+
+- Hồ sơ đạo đức: `docs/ethics/`
+- Pre-registration OSF (nháp): `docs/prereg/osf_preregistration.md`
+- Kịch bản video demo và preview 30 s: `docs/video/demo_script.md`
+- Hình teaser: `figures/uist2027/fig_teaser.pdf` (`scripts/paper_figures.py fig_teaser`)
+- Màn hình Study 2: `docs/study2/screens/`

@@ -42,5 +42,5 @@ Còn thiếu, cần bổ sung trước khi nộp: mẫu đơn của hội đồn
 ## Sau khi được duyệt
 
 1. Điền số quyết định vào phiếu đồng ý và tài liệu tuyển.
-2. **Đăng ký trước trên OSF** (giả thuyết, phân tích, quy tắc loại) **trước phiên đầu tiên**, kể cả pilot nếu pilot dùng để chỉnh giả định hiệu ứng.
+2. **Đăng ký trước trên OSF** (bản nháp: [`../prereg/osf_preregistration.md`](../prereg/osf_preregistration.md); giả thuyết, phân tích, quy tắc loại) **trước phiên đầu tiên**, kể cả pilot nếu pilot dùng để chỉnh giả định hiệu ứng.
 3. Cập nhật paper (`paper/uist2027/main.tex`, mục Study 1 và Study 2): thay `\TODO{pre-register on OSF…}` bằng link ẩn danh, và thêm câu phê duyệt, ví dụ *"Both studies were approved by [committee] ([decision no.]); all participants gave informed consent."*
