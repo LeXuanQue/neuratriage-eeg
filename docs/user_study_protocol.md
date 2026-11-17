@@ -193,7 +193,7 @@ _Bộ hồ sơ đạo đức soạn từ mục này (đề cương tóm tắt, p
 
 | Việc | Trạng thái |
 |---|---|
-| Ngưỡng SQI v2 đóng băng trên TUAR | Đang chờ dữ liệu |
+| Ngưỡng SQI v2 đóng băng trên TUAR | Xong 2026-11-17: ramp drift 2.19–2.99 (`results/sqi_v2_calibration.json`); luật tay giữ nguyên vì scorer học và lý do `eye` đều trượt kiểm tra an toàn (`docs/paper_outline.md` mục 6–7) |
 | Giao diện điều kiện G: điểm từng kênh + lý do + lời khuyên trong `screen-live.jsx` | Xong 2026-11-16: `ChannelQualityPanel`, message WS `channel_quality` (`app/services/channel_quality.py`) |
 | Chế độ thí nghiệm: chọn điều kiện B/G, ẩn mọi gợi ý điều kiện nào là mới | Xong 2026-11-17: `app.html?participant=P07&condition=B&trial=1&source=device`. Ẩn sidebar và tweaks; badge góc chỉ hiện mã và số lượt, không hiện điều kiện; tự mở màn hình theo dõi và bắt đầu luồng (`source=replay` để pilot) |
 | Log sự kiện có timestamp ISO 8601: điểm SQI, thay đổi trạng thái, đánh dấu của người điều phối | Xong 2026-11-17: `POST /api/study/events` → `data/study_logs/P07.jsonl` (gitignored, mã bắt buộc dạng `P\d{2,3}`). Tự ghi mỗi tin chất lượng (~1 Hz, kèm lời khuyên đang hiện). Phím tắt cho người điều phối: Ctrl+Shift+S bắt đầu lượt, E kết thúc lượt (tăng số lượt), A người đo vừa sửa, R lỗi đã hết. **Tải lại trang thì số lượt lấy lại từ URL**, nên mỗi lượt mới phải đặt `trial=` đúng |
