@@ -19,7 +19,7 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
-from typing import Sequence
+from typing import Optional, Sequence
 
 import numpy as np
 
@@ -36,19 +36,19 @@ N_CONTROLS = 50
 CALIBRATION = ROOT / "results" / "sqi_v2_calibration.json"
 
 
-def make_config(line_freq: float) -> S.SqiV2Config:
+def make_config(line_freq: float, overrides: Optional[dict] = None) -> S.SqiV2Config:
     """Default config, with the frozen TUAR drift ramp when a calibration file exists."""
     values: dict = {"line_freq": line_freq}
     if CALIBRATION.exists():
         values["drift_ramp"] = json.loads(CALIBRATION.read_text(encoding="utf-8"))["drift_ramp"]
-    return S.config_from_dict(values)
+    return S.config_from_dict({**values, **(overrides or {})})
 
 
-def record_windows(path: Path, line_freq: float, scorer=None) -> list[dict]:
+def record_windows(path: Path, line_freq: float, scorer=None, overrides: Optional[dict] = None) -> list[dict]:
     d = np.load(path)
     x, fs = d["data"].astype(float), float(d["fs"])
     n = int(WIN_SEC * fs)
-    cfg = make_config(line_freq)
+    cfg = make_config(line_freq, overrides)
     rows = []
     for k in list(range(0, x.shape[1] - n + 1, n))[:MAX_WINDOWS_PER_RECORD]:
         q = S.assess_window(x[:, k : k + n], fs, config=cfg, scorer=scorer)
@@ -63,10 +63,10 @@ def record_windows(path: Path, line_freq: float, scorer=None) -> list[dict]:
     return rows
 
 
-def summarize(paths: Sequence[Path], line_freq: float, scorer=None) -> tuple[dict, np.ndarray]:
+def summarize(paths: Sequence[Path], line_freq: float, scorer=None, overrides: Optional[dict] = None) -> tuple[dict, np.ndarray]:
     per_record, all_rows = [], []
     for p in paths:
-        rows = record_windows(p, line_freq, scorer)
+        rows = record_windows(p, line_freq, scorer, overrides)
         if rows:
             all_rows.extend(rows)
             per_record.append((
@@ -90,19 +90,19 @@ def summarize(paths: Sequence[Path], line_freq: float, scorer=None) -> tuple[dic
     return summary, rec[:, 0]
 
 
-def gate_check(scorer=None) -> dict:
+def gate_check(scorer=None, overrides: Optional[dict] = None) -> dict:
     """E9 on the four cohorts; ``scorer`` swaps the hand-set channel score for a learned one."""
     import pandas as pd
     from sklearn.metrics import roc_auc_score
 
     out: dict = {}
-    out["IS"], is_scores = summarize(sorted((ROOT / "dataset_ischemic").glob("sub-*.npz")), 50.0, scorer)
+    out["IS"], is_scores = summarize(sorted((ROOT / "dataset_ischemic").glob("sub-*.npz")), 50.0, scorer, overrides)
     # PhysioNet eegmmidb is a US rig: 60 Hz mains (peak ~100x background), not 50 Hz
-    out["NS"], ns_scores = summarize(sorted((ROOT / "dataset_healthy").glob("*.npz"))[:N_CONTROLS], 60.0, scorer)
+    out["NS"], ns_scores = summarize(sorted((ROOT / "dataset_healthy").glob("*.npz"))[:N_CONTROLS], 60.0, scorer, overrides)
     manifest = pd.read_csv(ROOT / "dataset_tuh" / "manifest_tuh.csv")
     for label, name in [(1, "TUSL_slow"), (0, "TUSL_bckg")]:
         paths = [ROOT / Path(p.replace("\\", "/")) for p in manifest.loc[manifest["label"] == label, "path"]]
-        out[name], _ = summarize(paths, 60.0, scorer)  # TUH is a US rig
+        out[name], _ = summarize(paths, 60.0, scorer, overrides)  # TUH is a US rig
     y = np.r_[np.ones(len(is_scores)), np.zeros(len(ns_scores))]
     out["auc_is_vs_ns_from_v2_record_score"] = float(roc_auc_score(y, np.r_[is_scores, ns_scores]))
     out["drift_ramp"] = list(make_config(50.0).drift_ramp)

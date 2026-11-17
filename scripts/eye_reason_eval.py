@@ -12,10 +12,14 @@ the four criteria committed in 1d03614 before any test number was seen:
 
 Usage::
 
-    .venv/Scripts/python.exe scripts/eye_reason_eval.py
+    .venv/Scripts/python.exe scripts/eye_reason_eval.py                  # both phases
+    .venv/Scripts/python.exe scripts/eye_reason_eval.py --phase cohorts  # (d) only, reuse the saved test half
+
+The reason is off in the shipped config (it failed (c)); this script turns it on explicitly.
 """
 from __future__ import annotations
 
+import argparse
 import json
 import sys
 from pathlib import Path
@@ -30,6 +34,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 E7_BEFORE = 0.7134649803716046  # results/tuar_sqi_eval.json, reason_accuracy_e7 (2026-11-17)
 MAX_CLEAN_RATE = 0.07
 MAX_E7_DROP = 0.02
+EYE_ON = {"eye_reason": True}
+PARTS = ROOT / "results" / "eye_reason_eval_parts.json"
 
 
 def eye_fires(df) -> np.ndarray:
@@ -65,10 +71,10 @@ def _test_half_metrics() -> dict:
     _, test_pids = T.split_patients(df["pid"].unique())
     test = df[df["pid"].isin(test_pids)].reset_index(drop=True)
     ramp = json.loads((ROOT / "results" / "sqi_v2_calibration.json").read_text(encoding="utf-8"))["drift_ramp"]
-    base = {"drift_ramp": ramp, "line_freq": T.TUH_LINE_FREQ}
+    base = {"drift_ramp": ramp, "line_freq": T.TUH_LINE_FREQ}  # eye off, as shipped
     art = test[test["label"] == 1]
-    _, why_on = T.rescore_with_reasons(art, sqi_v2.config_from_dict(base))
-    _, why_off = T.rescore_with_reasons(art, sqi_v2.config_from_dict({**base, "eye_delta_min": 2.0}))
+    _, why_on = T.rescore_with_reasons(art, sqi_v2.config_from_dict({**base, **EYE_ON}))
+    _, why_off = T.rescore_with_reasons(art, sqi_v2.config_from_dict(base))
     eyem = (art["kind"] == "eyem").to_numpy()
     ok = T.expected_reasons("eyem")
     clean = test[(test["label"] == 0) & (test["v2_flat"] == 0)]
@@ -84,14 +90,34 @@ def _test_half_metrics() -> dict:
     }
 
 
+def _load_parts() -> dict:
+    return json.loads(PARTS.read_text(encoding="utf-8")) if PARTS.exists() else {}
+
+
+def _save_parts(parts: dict) -> None:
+    PARTS.write_text(json.dumps(parts, indent=2), encoding="utf-8")
+
+
 def main() -> None:
     from sqi_v2_gate_check import gate_check
 
-    metrics = _test_half_metrics()
-    print(json.dumps(metrics, indent=2), flush=True)
-    e9 = gate_check()
-    metrics["eye_share"] = {k: e9[k]["reason_channel_share"]["eye"] for k in ("IS", "NS", "TUSL_slow", "TUSL_bckg")}
-    out = {"metrics": metrics, **verdict(metrics), "e9_gated_rate": {k: e9[k]["gated_rate"] for k in metrics["eye_share"]}}
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap.add_argument("--phase", choices=("all", "test", "cohorts"), default="all")
+    args = ap.parse_args()
+    parts = _load_parts()
+    if args.phase in ("all", "test"):
+        parts["test_half"] = _test_half_metrics()
+        _save_parts(parts)
+        print(json.dumps(parts["test_half"], indent=2), flush=True)
+    if args.phase in ("all", "cohorts"):
+        e9 = gate_check(overrides=EYE_ON)
+        parts["eye_share"] = {k: e9[k]["reason_channel_share"]["eye"] for k in ("IS", "NS", "TUSL_slow", "TUSL_bckg")}
+        parts["e9_gated_rate_eye_on"] = {k: e9[k]["gated_rate"] for k in parts["eye_share"]}
+        _save_parts(parts)
+    if "test_half" not in parts or "eye_share" not in parts:
+        return
+    metrics = {**parts["test_half"], "eye_share": parts["eye_share"]}
+    out = {"metrics": metrics, **verdict(metrics), "e9_gated_rate_eye_on": parts["e9_gated_rate_eye_on"]}
     (ROOT / "results" / "eye_reason_eval.json").write_text(json.dumps(out, indent=2), encoding="utf-8")
     print(json.dumps({k: out[k] for k in ("criteria", "ship")}, indent=2), metrics["eye_share"])
 

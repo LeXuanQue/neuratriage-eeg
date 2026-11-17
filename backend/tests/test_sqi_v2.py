@@ -340,8 +340,15 @@ _QUIET = {"missing_fraction": 0.0, "clip_fraction": 0.0, "drift_excess": 0.0, "l
 
 
 @pytest.mark.unit
+def test_eye_reason_is_off_by_default() -> None:
+    """It failed its pre-registered E7 criterion on the TUAR test half (docs/paper_outline.md s.7)."""
+    _, reasons = S.score_features({**_QUIET, "delta_ratio": 0.95, "alpha_peak": -0.3}, S.SqiV2Config())
+    assert "eye" not in reasons
+
+
+@pytest.mark.unit
 def test_eye_reason_fires_on_high_delta_without_alpha() -> None:
-    cfg = S.SqiV2Config()
+    cfg = S.SqiV2Config(eye_reason=True)
     _, reasons = S.score_features({**_QUIET, "delta_ratio": 0.95, "alpha_peak": -0.3}, cfg)
     assert reasons == ("eye",)
 
@@ -349,7 +356,7 @@ def test_eye_reason_fires_on_high_delta_without_alpha() -> None:
 @pytest.mark.unit
 @pytest.mark.parametrize("delta, alpha", [(0.95, 0.4), (0.6, -0.3), (float("nan"), -0.3)])
 def test_eye_reason_needs_both_high_delta_and_no_alpha(delta: float, alpha: float) -> None:
-    _, reasons = S.score_features({**_QUIET, "delta_ratio": delta, "alpha_peak": alpha}, S.SqiV2Config())
+    _, reasons = S.score_features({**_QUIET, "delta_ratio": delta, "alpha_peak": alpha}, S.SqiV2Config(eye_reason=True))
     assert "eye" not in reasons
 
 
@@ -357,7 +364,7 @@ def test_eye_reason_needs_both_high_delta_and_no_alpha(delta: float, alpha: floa
 def test_eye_reason_never_changes_the_score() -> None:
     """Weight 0 by design (DG2): high delta without alpha is also what stroke slowing looks like."""
     feats = {**_QUIET, "delta_ratio": 0.95, "alpha_peak": -0.3, "drift_excess": 2.6}
-    on = S.score_features(feats, S.SqiV2Config())
-    off = S.score_features(feats, S.SqiV2Config(eye_delta_min=2.0))
+    on = S.score_features(feats, S.SqiV2Config(eye_reason=True))
+    off = S.score_features(feats, S.SqiV2Config())
     assert on[0] == off[0]
     assert on[1][-1] == "eye" and on[1][:-1] == off[1]  # listed after every reason that costs score

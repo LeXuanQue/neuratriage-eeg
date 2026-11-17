@@ -81,6 +81,9 @@ class SqiV2Config:
     # Eye movement / blink: high 1-4 Hz share with no alpha above the 1/f fit. Fixed on the TUAR
     # calibration half only (clean-channel 91st and 25th percentiles; docs/paper_outline.md s.7).
     # Stroke slowing looks the same per channel, so this reason has weight 0 (DG2).
+    # Off by default: on the TUAR test half it lowered reason accuracy (E7) by more than the
+    # 2 points the plan allowed (docs/paper_outline.md s.7).
+    eye_reason: bool = False
     eye_delta_min: float = 0.857
     eye_alpha_max: float = -0.104
 
@@ -275,7 +278,7 @@ def _severities(features: Mapping[str, float], cfg: SqiV2Config) -> dict:
         "line_noise": (_ramp(f["line_ratio"], *cfg.line_ramp[:2]) if has_line_peak else 0.0, cfg.line_ramp[2]),
         "muscle": (muscle / muscle_weight, muscle_weight),
         "transient": (_ramp(f["kurtosis"], *cfg.kurtosis_ramp[:2]), cfg.kurtosis_ramp[2]),
-        "eye": (float(f["delta_ratio"] >= cfg.eye_delta_min and f["alpha_peak"] <= cfg.eye_alpha_max), 0.0),
+        "eye": (float(cfg.eye_reason and f["delta_ratio"] >= cfg.eye_delta_min and f["alpha_peak"] <= cfg.eye_alpha_max), 0.0),
     }
 
 

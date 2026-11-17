@@ -119,3 +119,13 @@ Vấn đề: 86% kênh-cửa sổ eyem trên TUAR không có lý do nào.
    - (c) E7 tổng (đúng loại trong số có lý do) không giảm quá 2 điểm so với 71%;
    - (d) **kiểm tra an toàn lý do:** `eye` không bật trên IS nhiều hơn NS, và không bật trên TUSL slow nhiều hơn bckg (tính theo tỉ lệ kênh-cửa sổ). Nếu trượt, panel sẽ gọi slowing của người bệnh stroke là "cử động mắt", nên không đưa vào.
 4. Nếu không đạt: báo cáo kết quả âm, code giữ lại nhưng tắt.
+
+**Kết quả (chạy 2026-11-17, quy tắc đóng băng ở 10502aa, chạy nửa test một lần):**
+
+- Quy tắc chọn trên nửa calib: `delta_ratio ≥ 0.857` và `alpha_peak ≤ −0.104` (phân vị 91% và 25% của kênh sạch). Trên nửa calib: kênh sạch 4.7%, eyem 29.8%, artifact khác 8.8%.
+- (a) **đạt:** eyem có lý do đúng loại 6.0% → 31.2% (`eye` đứng đầu 25.2%).
+- (b) **đạt:** bật trên 3.8% kênh sạch nửa test.
+- (c) **trượt:** E7 68.4% (ngưỡng 69.3%). `eye` bật cả trên artifact điện cực (elec 18%, chew_elec 34%, eyem_elec 28%).
+- (d) **trượt phần IS/NS:** `eye` bật trên 7.5% kênh-cửa sổ IS và 1.5% NS (gấp 5 lần). TUSL slow 4.1% so với bckg 6.8% thì đạt.
+- **Kết luận:** không đưa vào app. `SqiV2Config.eye_reason = False` mặc định, code và test giữ lại. Trong paper: một câu kết quả âm ở đoạn "Reasons and target channel". Bài học giống scorer học: theo từng kênh, cử động mắt và slowing của stroke trông như nhau. Muốn tách được cần đặc trưng không gian (trước trán so với phía sau, đối xứng FP1/FP2), mà headband 2 kênh trán không có.
+- Số liệu: `results/eye_reason_eval.json`, `results/eye_reason_eval_parts.json`.
