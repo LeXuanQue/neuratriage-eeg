@@ -119,7 +119,7 @@ On a single clinical system (TUH Slowing Corpus, 29 patients, slowing vs.\ backg
 Figure~\ref{fig:cascade} removes one shortcut at a time.
 Within a source both models look perfect (AUC 0.993 and 0.999).
 Testing on unseen sources keeps them high (0.90--0.997); matching age changes little (0.89--0.99).
-Matching eye state---stroke recordings were eyes-open, one control source eyes-closed---is decisive: with eyes-open controls the feature model falls to 0.57 [0.46, 0.68] and 0.73 [0.60, 0.84], the Riemannian model holds at 0.82 [0.71, 0.90] and 0.82 [0.72, 0.90].
+Matching eye state---stroke recordings were eyes-open, one control source eyes-closed---is decisive: with eyes-open controls the feature model falls to 0.57 [0.46, 0.68] and 0.73 [0.60, 0.84], the Riemannian model holds at 0.82 [0.71, 0.90] and 0.82 [0.72, 0.90]. A compact convolutional network (EEGNet~\cite{lawhern2018eegnet}) trained on the same windows lies in between, at 0.77 [0.66, 0.88] and 0.63 [0.51, 0.75], so a deep model does not remove the problem.
 
 \begin{figure}[t]
   \centering
