@@ -171,6 +171,8 @@ Jabbour et al. (2025, N = 259 bác sĩ) cho thấy khi AI từ chối trả lờ
 
 ## 3. Đạo đức và dữ liệu (chung)
 
+_Bộ hồ sơ đạo đức soạn từ mục này (đề cương tóm tắt, phiếu đồng ý, quản lý dữ liệu, an toàn, tuyển người, giải thích sau phiên): [`docs/ethics/`](ethics/README.md)._
+
 - **Mức rủi ro:** tối thiểu.
   - Study 1 dùng EEG bề mặt, không xâm lấn, không kích thích; cảm giác chỉ như đeo băng đô.
   - Study 2 chỉ dùng tình huống giả định, không có dữ liệu bệnh nhân thật.
