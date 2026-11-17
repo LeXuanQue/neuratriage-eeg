@@ -233,7 +233,7 @@ def rescore(df, config) -> np.ndarray:
 # artifacts (elec, elpp) show up as lost contact, pops or slow wander, so several fit.
 _KIND_REASONS = {
     "musc": {"muscle"}, "chew": {"muscle"}, "shiv": {"muscle"},
-    "eyem": {"transient", "drift"},
+    "eyem": {"eye", "transient", "drift"},
     "elec": {"flat", "drift", "transient", "clipping", "missing"},
     "elpp": {"flat", "drift", "transient", "clipping", "missing"},
 }

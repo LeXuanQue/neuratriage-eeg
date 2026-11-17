@@ -57,6 +57,7 @@ def record_windows(path: Path, line_freq: float, scorer=None) -> list[dict]:
             "score": q.score,
             "gated": q.score < S.CHANNEL_OK,
             "bad_channels": float(np.mean([c.score < S.CHANNEL_OK for c in q.channels])),
+            "n_channels": len(q.channels),
             **{r: reasons.count(r) for r in S.REASON_ADVICE},
         })
     return rows
@@ -81,6 +82,10 @@ def summarize(paths: Sequence[Path], line_freq: float, scorer=None) -> tuple[dic
         "gated_rate": float(rec[:, 1].mean()),
         "bad_channel_rate": float(rec[:, 2].mean()),
         "reasons_per_window": {r: float(sum(w[r] for w in all_rows) / len(all_rows)) for r in S.REASON_ADVICE},
+        # share of channel-windows where the reason is listed (any rank)
+        "reason_channel_share": {
+            r: float(sum(w[r] for w in all_rows) / sum(w["n_channels"] for w in all_rows)) for r in S.REASON_ADVICE
+        },
     }
     return summary, rec[:, 0]
 

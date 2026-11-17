@@ -220,8 +220,8 @@ def test_select_channels_keep_all_when_keep_clean_is_zero() -> None:
     [
         ("musc", {"muscle"}),
         ("chew", {"muscle"}),
-        ("eyem", {"transient", "drift"}),
-        ("eyem_musc", {"transient", "drift", "muscle"}),
+        ("eyem", {"eye", "transient", "drift"}),
+        ("eyem_musc", {"eye", "transient", "drift", "muscle"}),
         ("elec", {"flat", "drift", "transient", "clipping", "missing"}),
     ],
 )

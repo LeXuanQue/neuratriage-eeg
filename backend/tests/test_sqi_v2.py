@@ -332,3 +332,32 @@ def test_guidance_names_the_worst_channel_and_its_fix() -> None:
 @pytest.mark.unit
 def test_guidance_is_none_for_clean_signal() -> None:
     assert S.guidance(S.assess_window(_clean(2), FS)) is None
+
+
+# --------------------------------------------------------------------- eye movement (advisory)
+_QUIET = {"missing_fraction": 0.0, "clip_fraction": 0.0, "drift_excess": 0.0, "line_ratio": 0.0,
+          "line_prominence": 1.0, "hf_ratio": 0.01, "aperiodic_exponent": 1.5, "kurtosis": 0.0}
+
+
+@pytest.mark.unit
+def test_eye_reason_fires_on_high_delta_without_alpha() -> None:
+    cfg = S.SqiV2Config()
+    _, reasons = S.score_features({**_QUIET, "delta_ratio": 0.95, "alpha_peak": -0.3}, cfg)
+    assert reasons == ("eye",)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("delta, alpha", [(0.95, 0.4), (0.6, -0.3), (float("nan"), -0.3)])
+def test_eye_reason_needs_both_high_delta_and_no_alpha(delta: float, alpha: float) -> None:
+    _, reasons = S.score_features({**_QUIET, "delta_ratio": delta, "alpha_peak": alpha}, S.SqiV2Config())
+    assert "eye" not in reasons
+
+
+@pytest.mark.unit
+def test_eye_reason_never_changes_the_score() -> None:
+    """Weight 0 by design (DG2): high delta without alpha is also what stroke slowing looks like."""
+    feats = {**_QUIET, "delta_ratio": 0.95, "alpha_peak": -0.3, "drift_excess": 2.6}
+    on = S.score_features(feats, S.SqiV2Config())
+    off = S.score_features(feats, S.SqiV2Config(eye_delta_min=2.0))
+    assert on[0] == off[0]
+    assert on[1][-1] == "eye" and on[1][:-1] == off[1]  # listed after every reason that costs score

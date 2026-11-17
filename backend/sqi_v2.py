@@ -35,6 +35,8 @@ REASON_ADVICE: Mapping[str, str] = MappingProxyType(
         "line_noise": "Mains interference: move away from power cables and chargers, check the reference.",
         "muscle": "Muscle noise: ask the patient to relax the jaw and forehead.",
         "transient": "Sudden spikes: keep the cable still and ask the patient to avoid blinking or moving.",
+        # Advisory only (weight 0): never lowers the score, see SqiV2Config.eye_delta_min.
+        "eye": "Eye movements or blinks: ask the patient to close the eyes gently and keep them still.",
     }
 )
 
@@ -48,7 +50,7 @@ Ramp = Tuple[float, float, float]  # (value where penalty starts, value where it
 
 _FEATURE_KEYS = (
     "missing_fraction", "clip_fraction", "drift_excess", "line_ratio", "line_prominence",
-    "hf_ratio", "aperiodic_exponent", "kurtosis",
+    "hf_ratio", "aperiodic_exponent", "kurtosis", "delta_ratio", "alpha_peak",
 )
 
 
@@ -76,6 +78,11 @@ class SqiV2Config:
     hf_ramp: Ramp = (0.3, 1.0, 0.5)
     low_exponent_ramp: Ramp = (0.6, 0.1, 0.5)  # decreasing: a flat (white) spectrum is noise
     kurtosis_ramp: Ramp = (5.0, 20.0, 0.5)
+    # Eye movement / blink: high 1-4 Hz share with no alpha above the 1/f fit. Fixed on the TUAR
+    # calibration half only (clean-channel 91st and 25th percentiles; docs/paper_outline.md s.7).
+    # Stroke slowing looks the same per channel, so this reason has weight 0 (DG2).
+    eye_delta_min: float = 0.857
+    eye_alpha_max: float = -0.104
 
 
 @dataclass(frozen=True)
@@ -268,6 +275,7 @@ def _severities(features: Mapping[str, float], cfg: SqiV2Config) -> dict:
         "line_noise": (_ramp(f["line_ratio"], *cfg.line_ramp[:2]) if has_line_peak else 0.0, cfg.line_ramp[2]),
         "muscle": (muscle / muscle_weight, muscle_weight),
         "transient": (_ramp(f["kurtosis"], *cfg.kurtosis_ramp[:2]), cfg.kurtosis_ramp[2]),
+        "eye": (float(f["delta_ratio"] >= cfg.eye_delta_min and f["alpha_peak"] <= cfg.eye_alpha_max), 0.0),
     }
 
 
