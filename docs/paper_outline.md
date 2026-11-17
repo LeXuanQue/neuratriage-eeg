@@ -106,3 +106,16 @@ Chạy trọn luồng trên 20 bản ghi TUAR đầu (12 bệnh nhân; nửa tes
 - Biến thể định sẵn (bỏ `delta_ratio`, `alpha_peak`): +0.042 [0.022, 0.067] trên TUAR, E9 vẫn trượt (45% vs 0.1%, AUC 0.001).
 - **Kết luận theo kế hoạch:** không triển khai, tracker giữ luật tay. Không thử biến thể thứ ba (sẽ là chọn sau khi nhìn dữ liệu). Code scorer giữ lại, có test, tắt mặc định (chỉ bật khi có `results/sqi_v2_learned_scorer.json`).
 - **Cách viết R1 trong paper:** đặc trưng v2 có thông tin (+0.08), luật tay không khai thác được; học điểm chất lượng từ nhãn artifact lâm sàng biến chỉ số chất lượng thành bộ phát hiện nguồn/bệnh lý. Đây là bằng chứng cho DG2 ("phải chặn bằng thiết kế, rồi kiểm tra"), một phát hiện có giá trị cho cộng đồng hơn là "v2 tốt hơn v1".
+
+## 7. Lý do `eye` (cử động mắt / chớp mắt), kế hoạch chốt 2026-11-17 trước khi nhìn dữ liệu
+
+Vấn đề: 86% kênh-cửa sổ eyem trên TUAR không có lý do nào.
+
+1. **Thiết kế:** thêm lý do `eye` với lời khuyên "nhờ người bệnh nhắm mắt và giữ yên". **Trọng số 0**: không đổi điểm kênh, nên không đổi cổng chất lượng, E9 (tỉ lệ gate), E11 và AUC phát hiện. Theo thiết kế, nó không thể giữ quyết định của người bệnh stroke. Nó chỉ đổi nhãn hiển thị trong điều kiện G (panel đã hiện lý do đầu tiên của mỗi kênh kể cả khi kênh đạt).
+2. **Phát triển chỉ trên nửa calib TUAR:** chọn quy tắc từ các đặc trưng đã cache (không học model). Ngưỡng đặt để `eye` bật trên ≤ 5% kênh-cửa sổ sạch của nửa calib.
+3. **Đánh giá một lần trên nửa test.** Chỉ đưa vào app nếu đạt cả bốn:
+   - (a) tỉ lệ kênh-cửa sổ eyem có lý do đúng loại (`eye`, `transient`, `drift`) tăng so với hiện tại;
+   - (b) `eye` bật trên ≤ 7% kênh-cửa sổ sạch của nửa test;
+   - (c) E7 tổng (đúng loại trong số có lý do) không giảm quá 2 điểm so với 71%;
+   - (d) **kiểm tra an toàn lý do:** `eye` không bật trên IS nhiều hơn NS, và không bật trên TUSL slow nhiều hơn bckg (tính theo tỉ lệ kênh-cửa sổ). Nếu trượt, panel sẽ gọi slowing của người bệnh stroke là "cử động mắt", nên không đưa vào.
+4. Nếu không đạt: báo cáo kết quả âm, code giữ lại nhưng tắt.
