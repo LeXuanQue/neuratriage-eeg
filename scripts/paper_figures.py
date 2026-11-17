@@ -28,6 +28,13 @@ OUT = ROOT / "figures" / "uist2027"
 BLUE, ORANGE, AQUA = "#2a78d6", "#eb6834", "#1baf7a"
 INK, INK_2, GRID = "#0b0b0b", "#52514e", "#e4e3df"
 WIDTH = 3.4  # in, one ACM column
+TEASER_PANEL = OUT / "teaser_panel.png"  # capture of the live panel during a replay (see paper caption)
+# (label, what the clinician is told, edge colour)
+TEASER_OUTCOMES = (
+    ("Alert", "stroke likely:\nfalse alerts ≤ α", ORANGE),
+    ("Clear", "stroke unlikely:\nmisses ≤ α", AQUA),
+    ("No-Decision", "not normal, keep the\nstroke pathway; why:\nquality | ambiguous", BLUE),
+)
 
 
 # --------------------------------------------------------------------------- data helpers
@@ -193,6 +200,47 @@ def fig_decision_time(plt) -> None:
     plt.close(fig)
 
 
+def _box(ax, x, y, w, h, title, body, edge):
+    from matplotlib.patches import FancyBboxPatch
+
+    ax.add_patch(FancyBboxPatch((x, y), w, h, boxstyle="round,pad=0.008,rounding_size=0.02",
+                                linewidth=1.2, edgecolor=edge, facecolor="white"))
+    ax.text(x + 0.02, y + h - 0.035, title, fontsize=7.5, fontweight="bold", va="top", color=INK)
+    ax.text(x + 0.02, y + h - 0.11, body, fontsize=6.5, va="top", color=INK_2, linespacing=1.25)
+
+
+def _arrow(ax, x0, y0, x1, y1):
+    ax.annotate("", xy=(x1, y1), xytext=(x0, y0),
+                arrowprops={"arrowstyle": "-|>", "color": INK_2, "lw": 1.0, "shrinkA": 0, "shrinkB": 0})
+
+
+def fig_teaser(plt) -> None:
+    from matplotlib import image
+
+    fig = plt.figure(figsize=(2 * WIDTH + 0.33, 2.6))
+    ax_img = fig.add_axes([0.0, 0.0, 0.40, 1.0])
+    ax_img.imshow(image.imread(TEASER_PANEL))
+    ax_img.set_axis_off()
+    ax = fig.add_axes([0.42, 0.0, 0.58, 1.0])
+    ax.set_xlim(-0.02, 1.02)
+    ax.set_ylim(-0.02, 1.02)
+    ax.set_axis_off()
+    _box(ax, 0.00, 0.60, 0.28, 0.38, "1  Acquire",
+         "every channel scored\nevery second, with a\nreason and an action\n(DG1); slowing is\nnot penalised (DG2)", INK_2)
+    _box(ax, 0.35, 0.60, 0.28, 0.38, "2  Decide",
+         "per patient, with\nconformal thresholds\ncalibrated on site;\nno usable window\n→ No-Decision", INK_2)
+    _arrow(ax, 0.29, 0.79, 0.345, 0.79)
+    for k, (label, body, edge) in enumerate(TEASER_OUTCOMES):
+        y = 0.70 - 0.345 * k
+        _box(ax, 0.72, y, 0.28, 0.27, label, body, edge)
+        _arrow(ax, 0.64, 0.79, 0.715, y + 0.135)
+    ax.text(0.0, 0.42, "3  Tell the clinician", fontsize=7.5, fontweight="bold", color=INK, va="top")
+    ax.text(0.0, 0.34, "Every patient ends in one of three\nstates. No-Decision is worded as an\naction, not as an absence (Study 2).",
+            fontsize=6.5, color=INK_2, va="top", linespacing=1.25)
+    _save(fig, "fig_teaser")
+    plt.close(fig)
+
+
 def main(names: Sequence[str] = ()) -> None:
     plt = _style()
     figures = {
@@ -200,6 +248,7 @@ def main(names: Sequence[str] = ()) -> None:
         "fig_far_vs_alpha": fig_far_vs_alpha,
         "fig_calibration_size": fig_calibration_size,
         "fig_decision_time": fig_decision_time,
+        "fig_teaser": fig_teaser,
     }
     for name, fn in figures.items():
         if not names or name in names:

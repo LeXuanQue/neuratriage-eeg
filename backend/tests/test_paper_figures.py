@@ -46,3 +46,22 @@ def test_far_curve_reads_mean_and_band_per_alpha() -> None:
 def test_window_level_far_is_read_from_its_own_key() -> None:
     report = {"splits": {"S1": {"alphas": {"0.1": {"window_level_any_alert_far": {"mean": 0.3, "p05": 0.1, "p95": 0.5}}}}}}
     assert F.far_curve(report, "S1", "window_level_any_alert_far")[1] == [0.3]
+
+
+@pytest.mark.unit
+def test_teaser_outcomes_cover_the_three_decisions() -> None:
+    labels = [o[0] for o in F.TEASER_OUTCOMES]
+    assert labels == ["Alert", "Clear", "No-Decision"]
+
+
+@pytest.mark.unit
+def test_teaser_is_written_from_the_panel_capture(tmp_path, monkeypatch) -> None:
+    import numpy as np
+    from matplotlib import image
+
+    panel = tmp_path / "panel.png"
+    image.imsave(panel, np.ones((20, 20, 3)))
+    monkeypatch.setattr(F, "OUT", tmp_path / "out")
+    monkeypatch.setattr(F, "TEASER_PANEL", panel)
+    F.fig_teaser(F._style())
+    assert (tmp_path / "out" / "fig_teaser.pdf").exists()

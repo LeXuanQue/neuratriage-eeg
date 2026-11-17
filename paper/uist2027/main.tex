@@ -37,6 +37,14 @@ On 113 held-out patients with labelled artifacts, a quality score learned from t
 
 \keywords{EEG, signal quality, selective prediction, conformal prediction, abstention, clinical decision support, wearable sensing}
 
+\begin{teaserfigure}
+  \centering
+  \includegraphics[width=\textwidth]{fig_teaser.pdf}
+  \caption{Left: the per-channel quality panel (condition G) during the replay of an 18-channel clinical recording through the live pipeline. FP2 shows spikes that occur naturally in the recording (nothing injected); the panel names the channel, the reason and one action, while the other channels stay usable. Right: how a decision travels. Every patient ends in Alert, Clear or No-Decision, and No-Decision states why and what to do next.}
+  \Description{A screenshot of a panel listing 18 EEG channels with green score bars, except FP2 which is red and labelled Spikes; a callout above reads: Fix this, FP2, Spikes, sudden spikes: keep the cable still and ask the patient to avoid blinking or moving. To the right, a flow diagram: Acquire, then Decide, then three outcome boxes labelled Alert, Clear and No-Decision.}
+  \label{fig:teaser}
+\end{teaserfigure}
+
 \maketitle
 
 %% ===================================================================================
@@ -117,6 +125,7 @@ Matching eye state---stroke recordings were eyes-open, one control source eyes-c
   \centering
   \includegraphics[width=\linewidth]{fig_confound_cascade.pdf}
   \caption{Patient-level AUC (95\% patient-bootstrap CI) as acquisition shortcuts are removed. Each point is one train/test source split. Once controls are also eyes-open, the entropy/MFDFA feature model falls to near chance while the Riemannian model keeps $\approx$0.82.}
+  \Description{A dot plot of patient-level AUC with confidence intervals for two models across four control levels: within source, source swap, age matched and eye-state matched. The feature model drops from near 1.0 to between 0.57 and 0.73 at the eye-state matched level, while the Riemannian model stays around 0.82.}
   \label{fig:cascade}
 \end{figure}
 
@@ -153,7 +162,7 @@ Missing alpha is reported but never penalised.
 The drift ramp is fitted on half of the TUAR patients~\cite{hamid2020tuar} and frozen before evaluation: it starts at the 95th percentile of $\Delta_{\text{drift}}$ over their clean channel-windows (2.19) and saturates at 2.99.
 
 \paragraph{Guidance (DG1).}
-The panel shows every channel's score bar and, for the worst channel, a callout with the channel name, the reason and one action (e.g., ``AF3 --- slow baseline drift: press the electrode firmly or re-wet it''). Figure~\TODO{teaser figure: operator, headband, panel} shows the panel during an artifact.
+The panel shows every channel's score bar and, for the worst channel, a callout with the channel name, the reason and one action (e.g., ``AF3 --- slow baseline drift: press the electrode firmly or re-wet it''). Figure~\ref{fig:teaser} shows the panel during an artifact.
 
 \subsection{Actionable abstention}
 \label{sec:conformal}
@@ -193,6 +202,7 @@ The bound also holds behind the quality gate the interface uses. Scoring each wi
   \centering
   \includegraphics[width=0.85\linewidth]{fig_far_vs_alpha.pdf}
   \caption{Realised false-alert rate (mean, 5--95\% over 2000 calibration draws) against the target $\alpha$ on two held-out source splits. Only patient-level conformal tracks the dashed target; fixed thresholds ignore it and window-level calibration with ``any alert'' exceeds it severalfold.}
+  \Description{Two line charts, one per held-out split, plotting the realised false-alert rate against the target alpha from 0.05 to 0.2. The patient-level conformal line follows the dashed identity line; the fixed-threshold line is flat at 0.30 or 0.16; the window-level line lies two to five times above the target.}
   \label{fig:far}
 \end{figure*}
 
@@ -203,6 +213,7 @@ The bound is marginal over calibration draws. Figure~\ref{fig:calsize} shows tha
   \centering
   \includegraphics[width=\linewidth]{fig_calibration_size.pdf}
   \caption{False-alert rate at $\alpha = 0.1$ against the number of calibration patients per class (S2, 1000 draws). Below 9 per class the system can never alert. The mean respects $\alpha$; the 90th percentile shows what a single site may experience.}
+  \Description{A line chart of false-alert rate against the number of calibration patients per class. The mean follows a sawtooth at or below 0.1 from 9 patients onward and is zero below 9; the 90th percentile line lies higher, up to about 0.22.}
   \label{fig:calsize}
 \end{figure}
 
@@ -213,6 +224,7 @@ Streaming each S2 recording through the deployed detector and scoring patients f
   \centering
   \includegraphics[width=\linewidth]{fig_decision_time.pdf}
   \caption{Patient AUC, sensitivity and share of stroke patients in No-Decision ($\alpha = 0.2$) against the seconds recorded before deciding (S2, 50 stroke / 50 control).}
+  \Description{A line chart against seconds recorded, from 8 to 120 seconds: patient AUC stays between 0.79 and 0.80, sensitivity between 0.59 and 0.66, and the share of stroke patients in No-Decision between 0.15 and 0.22.}
   \label{fig:time}
 \end{figure}
 
