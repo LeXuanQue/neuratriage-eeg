@@ -480,6 +480,16 @@ class RealTimeStrokeDetector:
         if sqi < self.config.sqi_threshold:
             result["status"] = "no-decision"
             return result
+        # An all-flat window scores exactly 1 - 0.45 = 0.55 in compute_sqi, i.e. AT the gate,
+        # and used to reach the model (2-channel bipolar devices map to all-empty slots).
+        # compute_sqi stays unchanged because the deployed model was trained on it.
+        if float(feats.get("sqi_flatline", 0.0)) >= 1.0:
+            result["status"] = "no-decision"
+            return result
+        can_score = getattr(self.window_model, "can_score", None)
+        if window is not None and can_score is not None and not can_score(window):
+            result["status"] = "no-decision"
+            return result
 
         if self.window_model is not None and window is not None:
             probs = np.asarray(self.window_model.predict_proba_from_window(window), dtype=float)

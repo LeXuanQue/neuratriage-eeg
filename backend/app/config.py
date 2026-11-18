@@ -54,9 +54,14 @@ class Settings(BaseSettings):
     # Real-time scorer: "features" = entropy/MFDFA + LightGBM (model_path);
     # "riemann" = covariance tangent-space model (riemann_model_path), the most
     # device-transferable model in the leave-source-out study. SQI gating, EMA and
-    # hysteresis are shared by both.
-    realtime_model: str = "features"
+    # hysteresis are shared by both. Default "riemann" (2026-11-16): it is the model the
+    # paper evaluates (eye-matched AUC, conformal No-Decision) and ~13x faster per chunk
+    # (results/latency_riemann.json). Set REALTIME_MODEL=features to go back.
+    realtime_model: str = "riemann"
     riemann_model_path: str = "backend/models/riemann_model.joblib"
+    # Study 1 event logs (append-only JSONL per pseudonymous participant code); relative
+    # paths are resolved against the repo root. Gitignored.
+    study_log_dir: str = "data/study_logs"
     # Opt-in folder OUTSIDE the repo with extra replay cases (e.g. F:/eeg_extra/npz/oslo
     # for the "unseen device -> false alert" demo). Empty = only the repo datasets.
     extra_replay_dir: str = ""

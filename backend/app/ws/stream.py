@@ -13,6 +13,10 @@ Protocol (Master Prompt §4):
      "predicted_class": "non-stroke"|"ischemic"|null,
      "probabilities_smooth": [p_ns, p_is, p_hs],
      "sqi_total": 0.82, "alert_class": "ischemic"|null}
+    {"type": "channel_quality", "timestamp_sec": 4.0, "score": 0.82,
+     "worst_channel": "AF4", "channels": [{"name": "AF3", "score": 1.0, "reasons": []}, ...],
+     "guidance": {"channel": "AF4", "reason": "flat", "advice": "..."} | null}
+                                        # SQI v2 on the raw device channels, ~1 Hz
     {"type": "replay_loop", "lap": 2}   # only when init asked for loop=true
     {"type": "device_status", "state": "searching"|"connected"|"error"|
      "blocked"|"stopped", "message": "...", "retry_in_sec": 2.0}
@@ -36,6 +40,8 @@ from ..models import Alert, EEGSession
 from ..auth import decode_token, find_user_by_id
 from ..services.artifact_inject import apply_synthetic_artifact
 from ..services.channel_mapper import DEVICE_PRESETS, map_to_pipeline
+from ..services.channel_quality import ChannelQualityTracker
+from ..services.study_recorder import StudyRecorder, study_root
 from ..services.model_manager import get_manager
 from ..services.replay_cases import resolve_stream_file
 from ..services.session_manager import get_session_manager
@@ -46,6 +52,38 @@ logger = logging.getLogger("neuratriage.ws")
 router = APIRouter()
 
 ALERT_ENTRY_STATUSES = {"alert-enter", "alert-switch"}
+
+
+def _record(recorder: Optional[StudyRecorder], chunk: np.ndarray, channels: List[str], fs: float) -> None:
+    """Keep the raw study signal; a recorder failure is logged and never stops the stream."""
+    if recorder is None:
+        return
+    try:
+        recorder.push(chunk, channels, fs)
+    except Exception:
+        logger.exception("Study recorder failed")
+
+
+async def _send_quality(ws: WebSocket, tracker: Optional[ChannelQualityTracker], chunk: np.ndarray) -> bool:
+    """Push a raw chunk into the per-channel tracker and forward a message when due.
+
+    Quality is advisory UI data: a scoring failure is logged and never stops the stream.
+    Returns False only when the client is gone.
+    """
+    if tracker is None:
+        return True
+    try:
+        msg = tracker.push(chunk)
+    except Exception:
+        logger.exception("Channel quality scoring failed")
+        return True
+    if msg is None:
+        return True
+    try:
+        await ws.send_json(msg)
+    except Exception:
+        return False
+    return True
 
 
 def _ensure_session_row(
@@ -220,6 +258,7 @@ async def _run_replay(
     realtime: bool = True,
     artifact_state: Optional[Dict[str, Any]] = None,
     loop: bool = False,
+    recorder: Optional[StudyRecorder] = None,
 ) -> None:
     """Server-driven replay: read a stored .npz and stream chunks through
     the detector at (optionally) real-time pace.
@@ -241,6 +280,7 @@ async def _run_replay(
 
     chunk_samples = max(1, int(round(chunk_seconds * fs)))
     n_total = data.shape[1]
+    quality = ChannelQualityTracker(replay_channels, fs)
     pos = 0
     lap = 0
     # Looping keeps a demo screen alive past the end of the recording. The
@@ -249,6 +289,7 @@ async def _run_replay(
     while pos < n_total:
         chunk = data[:, pos : pos + chunk_samples]
         pos += chunk_samples
+        _record(recorder, chunk, replay_channels, fs)  # before any demo artifact injection
         # Demo control: when artifact injection is toggled on, corrupt the chunk
         # so SQI drops and the UI enters No-Decision. The corrupted chunk is what
         # gets both displayed (raw_chunk) and scored, so the waveform and the SQI
@@ -267,6 +308,8 @@ async def _run_replay(
                 }
             )
         except Exception:
+            return
+        if not await _send_quality(ws, quality, chunk):
             return
         try:
             # NB: not named `loop` — that is this function's boolean parameter.
@@ -311,6 +354,7 @@ async def _run_device(
     session_id: str,
     address: str,
     counters: Dict[str, float],
+    recorder: Optional[StudyRecorder] = None,
 ) -> None:
     """Server-driven live device: stream BLE chunks through the detector.
 
@@ -351,6 +395,7 @@ async def _run_device(
     # The live device path is quality-only — it drives SQI / No-Decision but never
     # a class; classification stays on the validated 18-ch replay path (Hybrid).
     monitor = DeviceSqiMonitor(len(proto.channel_labels), proto.fs, detector.config)
+    quality = ChannelQualityTracker(list(proto.channel_labels), proto.fs)
     gate = float(detector.config.sqi_threshold)
     elapsed = {"sec": 0.0}
 
@@ -366,6 +411,9 @@ async def _run_device(
                 }
             )
         except Exception:
+            return
+        _record(recorder, arr, list(labels), proto.fs)
+        if not await _send_quality(ws, quality, arr):
             return
         sqi = monitor.push(arr)
         if sqi is None:
@@ -451,6 +499,8 @@ async def stream(ws: WebSocket, session_id: str) -> None:
     }
     replay_task: Optional[asyncio.Task] = None
     device_task: Optional[asyncio.Task] = None
+    client_quality: Optional[ChannelQualityTracker] = None  # for client-pushed "data"
+    recorder: Optional[StudyRecorder] = None  # raw signal of a study session (Study 1)
     # Demo-only artifact-injection toggle, shared with the replay task by reference.
     artifact_state: Dict[str, Any] = {"on": False, "intensity": 1.0}
 
@@ -483,6 +533,10 @@ async def stream(ws: WebSocket, session_id: str) -> None:
                     continue
                 patient_id = msg.get("patient_id") or None
                 _ensure_session_row(session_id, detector_channels, fs, patient_id=patient_id)
+                client_quality = ChannelQualityTracker(detector_channels, fs)
+                if recorder is not None:  # a re-init starts a new recording
+                    recorder.close()
+                recorder = StudyRecorder.from_init(msg, study_root())
                 replay_npz = msg.get("replay_npz") or msg.get("case_id")
                 replay_path = resolve_stream_file(replay_npz) if replay_npz else None
                 await ws.send_json(
@@ -492,6 +546,8 @@ async def stream(ws: WebSocket, session_id: str) -> None:
                         "mapped_channels": list(DEFAULT_CHANNELS),
                         "device_channels": detector_channels,
                         "replay_npz": str(replay_path) if replay_path else None,
+                        # Study mode: tells the facilitator at once whether raw data is kept.
+                        "study_recording": recorder is not None,
                     }
                 )
                 if source_kind == "device":
@@ -499,7 +555,8 @@ async def stream(ws: WebSocket, session_id: str) -> None:
                         device_task.cancel()
                     device_task = asyncio.create_task(
                         _run_device(
-                            ws, session_id, str(msg.get("device_address") or ""), counters
+                            ws, session_id, str(msg.get("device_address") or ""), counters,
+                            recorder=recorder,
                         )
                     )
                 elif replay_npz and not replay_path:
@@ -515,7 +572,7 @@ async def stream(ws: WebSocket, session_id: str) -> None:
                         _run_replay(
                             ws, session_id, replay_path, counters,
                             realtime=realtime, artifact_state=artifact_state,
-                            loop=loop_replay,
+                            loop=loop_replay, recorder=recorder,
                         )
                     )
 
@@ -545,6 +602,7 @@ async def stream(ws: WebSocket, session_id: str) -> None:
                     continue
                 try:
                     arr = np.asarray(msg.get("chunk", []), dtype=float)
+                    _record(recorder, arr, detector_channels, detector.fs)  # before demo artifacts
                     if artifact_state.get("on") and arr.ndim == 2 and arr.size:
                         arr = apply_synthetic_artifact(
                             arr, detector.fs, float(artifact_state.get("intensity", 1.0))
@@ -559,6 +617,8 @@ async def stream(ws: WebSocket, session_id: str) -> None:
                     logger.exception("Mapping error for session %s", session_id)
                     await ws.send_json({"type": "error", "message": str(exc)})
                     continue
+                if not await _send_quality(ws, client_quality, arr):
+                    break
 
                 try:
                     loop = asyncio.get_running_loop()
@@ -603,6 +663,12 @@ async def stream(ws: WebSocket, session_id: str) -> None:
                 except (asyncio.CancelledError, Exception):
                     pass
         sm.close_session(session_id)
+        if recorder is not None:
+            try:
+                # off the event loop: compressing 15 min of data must not stall other sessions
+                await asyncio.to_thread(recorder.close)
+            except Exception:
+                logger.exception("Study recorder close failed for %s", session_id)
         _finalise_session_row(
             session_id,
             int(counters.get("total_windows", 0)),

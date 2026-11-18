@@ -85,6 +85,59 @@ def test_prediction_ignores_recording_units() -> None:
                                model.predict_proba_from_window(x[5]), atol=1e-9)
 
 
+def test_can_score_rejects_flat_and_nonfinite_windows() -> None:
+    rng = np.random.default_rng(7)
+    x = rng.standard_normal((20, 4, 256))
+    model = rm.RiemannStrokeModel.fit(x, np.array([0, 1] * 10), channels=list("abcd"), fs=256.0, window_sec=1.0)
+    ok = rng.standard_normal((4, 256))
+    one_flat = ok.copy()
+    one_flat[2] = 0.0
+    with_nan = ok.copy()
+    with_nan[1, 10] = np.nan
+    assert model.can_score(ok)
+    assert not model.can_score(np.zeros((4, 256)))
+    assert not model.can_score(one_flat)
+    assert not model.can_score(with_nan)
+
+
+def _never_called_model():
+    class Model:
+        def can_score(self, window: np.ndarray) -> bool:
+            return False
+
+        def predict_proba_from_window(self, window: np.ndarray) -> np.ndarray:
+            raise AssertionError("must not score a window it cannot score")
+
+    return Model()
+
+
+def test_detector_withholds_when_the_window_model_cannot_score() -> None:
+    import eeg_stroke_pipeline as P
+
+    det = P.RealTimeStrokeDetector(None, config=P.PipelineConfig(), window_model=_never_called_model())
+    rng = np.random.default_rng(8)
+    events = []
+    for _ in range(12):
+        events += det.update(20.0 * rng.standard_normal((18, 128)))
+    assert events and all(e["status"] == "no-decision" for e in events)
+
+
+def test_detector_gates_an_all_flat_window_even_at_the_sqi_threshold() -> None:
+    """Regression 2026-11-16: an all-zero window scored sqi_total == 0.55 == the gate and
+    slipped through to the model (a 2-channel bipolar device maps to all-empty slots)."""
+    import eeg_stroke_pipeline as P
+
+    class Model:
+        def predict_proba_from_window(self, window: np.ndarray) -> np.ndarray:
+            raise AssertionError("an all-flat window must never reach the model")
+
+    det = P.RealTimeStrokeDetector(None, config=P.PipelineConfig(), window_model=Model())
+    events = []
+    for _ in range(12):
+        events += det.update(np.zeros((18, 128)))
+    assert events and all(e["status"] == "no-decision" for e in events)
+
+
 def test_detector_uses_window_model_and_skips_handcrafted_features(monkeypatch) -> None:
     import eeg_stroke_pipeline as P
 

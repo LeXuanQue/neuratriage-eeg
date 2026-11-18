@@ -84,6 +84,15 @@ class RiemannStrokeModel:
         clf.fit(scaler.transform(feats), np.asarray(y, dtype=int))
         return cls(ref, scaler, clf, list(channels), float(fs), float(window_sec), dict(metadata or {}))
 
+    def can_score(self, window: np.ndarray) -> bool:
+        """True when the window has finite values and signal on every channel.
+
+        A flat or missing channel makes the trace-normalised covariance degenerate (an
+        all-zero window divides by a zero trace), so the detector must withhold instead.
+        """
+        w = np.asarray(window, dtype=float)
+        return bool(w.ndim == 2 and np.isfinite(w).all() and (np.std(w, axis=1) > 0).all())
+
     def predict_proba_from_window(self, window: np.ndarray) -> np.ndarray:
         """[P(non-stroke), P(stroke)] for one preprocessed (channels, samples) window."""
         feats = tangent_vectors(window_covariance(window)[None], self.reference)

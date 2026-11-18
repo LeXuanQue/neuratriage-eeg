@@ -190,6 +190,9 @@
     const rawBufferRef = React.useRef(null);
     const deviceChannelsRef = React.useRef(DEFAULT_DEVICE_CHANNELS);
     const artifactOnRef = React.useRef(false);
+    // Latest per-channel SQI v2 message; kept in a ref because every "event"
+    // rebuilds the frame from scratch and would otherwise drop it.
+    const channelQualityRef = React.useRef(null);
     const initialArtifactRef = React.useRef(false);
     initialArtifactRef.current = !!artifactOn;
 
@@ -203,6 +206,7 @@
       let opened = false;
       rawBufferRef.current = null;
       artifactOnRef.current = false;
+      channelQualityRef.current = null;
       deviceChannelsRef.current = cleanChannels(requestedChannels);
       // Replay mode: server reads a stored .npz and pumps chunks itself, so
       // the FE just listens. No client-side synthetic generator runs.
@@ -216,6 +220,14 @@
         const initMsg = deviceMode
           ? { type: "init", source: "device", fs: FS }
           : { type: "init", device_channels: deviceChannelsRef.current, fs: FS };
+        // Study 1: the server keeps the raw signal under an opaque id for blinded rating.
+        if (window.NTStudy && window.NTStudy.active) {
+          initMsg.study = {
+            participant: window.NTStudy.participant,
+            trial: window.NTStudy.trial,
+            condition: window.NTStudy.condition,
+          };
+        }
         // A1: link session to patient on the backend
         if (patientId) {
           initMsg.patient_id = String(patientId);
@@ -270,8 +282,27 @@
             rawSource: useReplay ? "replay" : "raw",
             hasModelEvent: true,
             artifactOn: artifactOnRef.current,
+            channelQuality: channelQualityRef.current,
           });
+        } else if (payload.type === "channel_quality") {
+          channelQualityRef.current = payload;
+          if (window.NTStudy && window.NTStudy.active) {
+            const g = payload.guidance;
+            window.NTStudy.log("quality", {
+              t_stream: payload.timestamp_sec,
+              score: payload.score,
+              worst: payload.worst_channel,
+              channels: (payload.channels || []).map((c) => [c.name, c.score, (c.reasons || [])[0] || ""]),
+              // what the operator could see: guidance is only rendered in condition G
+              guidance_shown: window.NTStudy.condition === "G" && g ? g.reason : "",
+            });
+          }
+          setFrame((prev) => ({ ...(prev || fallbackFrame), channelQuality: payload }));
         } else if (payload.type === "ready") {
+          // Study mode: the server says whether it keeps the raw signal for blinded rating.
+          if (window.NTStudy && window.NTStudy.active && payload.study_recording === false) {
+            window.NTStudy.markNotRecording();
+          }
           const readyChannels = cleanChannels(payload.device_channels || payload.mapped_channels || deviceChannelsRef.current);
           deviceChannelsRef.current = readyChannels;
           setFrame((prev) => ({

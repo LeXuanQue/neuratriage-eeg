@@ -33,6 +33,7 @@ window.addEventListener('unhandledrejection', function(e) {
 <script src="shared/live-data.js"></script>
 <script src="shared/ws-stream.js"></script>
 <script src="shared/api.js"></script>
+<script src="shared/study-log.js"></script>
 
 <script type="text/babel" src="app/icons.jsx"></script>
 <script type="text/babel" src="app/visualizations.jsx"></script>
@@ -246,6 +247,12 @@ function App() {
       if (typeof tab === "string") setActive(tab);
     };
     window.addEventListener("nt:nav", onNav);
+    // Study mode (shared/study-log.js): start the requested stream on the live screen as
+    // soon as this listener exists, so the facilitator never needs the hidden menus.
+    const study = window.NTStudy;
+    if (study && study.active && study.startSource === "device") {
+      onNav({detail: {tab: "live", source: "device"}});
+    }
     return () => window.removeEventListener("nt:nav", onNav);
   }, []);
 
@@ -309,6 +316,17 @@ function App() {
     toggleLoop,
   };
   demoRef.current = demoApi;
+
+  // Study pilot with &source=replay: the demo scenarios load asynchronously, so wait for
+  // them and (re)start the current or first scenario exactly once.
+  const studyReplayStarted = useRef(false);
+  useEffect(() => {
+    const study = window.NTStudy;
+    if (!study || !study.active || study.startSource !== "replay" || studyReplayStarted.current) return;
+    if (!demoScenarios || !demoScenarios.length) return;
+    studyReplayStarted.current = true;
+    startDemo(demoScenario || demoScenarios[0]);
+  }, [demoScenarios]);
 
   // Track session start time when WS connects to backend
   const sessionStartRef = useRef(null);

@@ -61,6 +61,84 @@ window.ModelInfoCard = function ModelInfoCard({t, info, error, compact}) {
   );
 };
 
+// Study 1 (docs/user_study_protocol.md), read once from ?condition=:
+//   B = per-channel quality indicator only (bars + OK/Poor), like consumer headsets' contact
+//       indicators: no reasons, no advice, no "fix this channel" callout.
+//   G = default and the normal product: the indicator plus reason, advice and target channel.
+// The two conditions differ only in the guidance, which is the paper's contribution.
+const NT_STUDY_CONDITION = (new URLSearchParams(window.location.search).get("condition") || "G").toUpperCase();
+const NT_CHANNEL_OK = 0.7; // mirrors sqi_v2.CHANNEL_OK
+
+function qualityColor(score) {
+  return score >= 0.85 ? "var(--ns)" : score >= NT_CHANNEL_OK ? "var(--is)" : "var(--hs)";
+}
+
+/**
+ * Per-channel SQI v2. Mode "G" adds the reason, advice and target channel; mode "B" shows
+ * only the per-channel indicator (and must not leak reasons anywhere in the DOM).
+ * @param {{quality: ?{channels: {name: string, score: number, reasons: string[]}[],
+ *   worst_channel: string, guidance: ?{channel: string, reason: string, advice: string}},
+ *   t: object, mode: ("G"|"B")}} props
+ */
+window.ChannelQualityPanel = function ChannelQualityPanel({quality, t, mode = "G"}) {
+  const q = t.quality;
+  const guided = mode !== "B";
+  if (!quality) {
+    return (
+      <div className="panel" style={{padding:14}}>
+        <div className="nt-cq-title">{q.title}</div>
+        <div style={{fontSize:11.5, color:"var(--ink-3)"}}>{q.waiting}</div>
+      </div>
+    );
+  }
+  const tip = guided ? quality.guidance : null;
+  const anyBad = quality.channels.some(ch => ch.score < NT_CHANNEL_OK);
+  const many = quality.channels.length > 4;
+  return (
+    <div className="panel" style={{padding:14}}>
+      <div className="nt-cq-title">{q.title}</div>
+      <div aria-live="polite" role="status">
+        {!guided ? (
+          <div style={{fontSize:12, color: anyBad ? "var(--hs)" : "var(--ns)", marginBottom:10}}>
+            {anyBad ? q.someBad : q.allGood}
+          </div>
+        ) : tip ? (
+          <div className="nt-cq-fix">
+            <div style={{display:"flex", alignItems:"baseline", gap:10, marginBottom:6}}>
+              <span style={{fontSize:10.5, textTransform:"uppercase", letterSpacing:"0.10em", color:"var(--hs)", fontWeight:600}}>{q.fixTitle}</span>
+              <span className="mono" style={{fontSize:22, fontWeight:700, color:"var(--ink)", letterSpacing:"-0.01em"}}>{tip.channel}</span>
+              <span style={{fontSize:12, color:"var(--ink-2)"}}>{q.reasons[tip.reason] || tip.reason}</span>
+            </div>
+            <div style={{fontSize:13, lineHeight:1.5, color:"var(--ink)"}}>{q.advice[tip.reason] || tip.advice}</div>
+          </div>
+        ) : (
+          <div style={{fontSize:12, color:"var(--ns)", marginBottom:10}}>{q.allGood}</div>
+        )}
+      </div>
+      <div style={{display:"grid", gridTemplateColumns: many ? "1fr 1fr" : "1fr", gap: many ? "4px 14px" : 8}}>
+        {quality.channels.map(ch => {
+          const color = qualityColor(ch.score);
+          const isWorst = tip && ch.name === tip.channel;
+          const bad = ch.score < NT_CHANNEL_OK;
+          const label = guided
+            ? (ch.reasons.length ? (q.reasons[ch.reasons[0]] || ch.reasons[0]) : q.ok)
+            : (bad ? q.poor : q.ok);
+          const flagged = guided ? ch.reasons.length > 0 : bad;
+          return (
+            <div key={ch.name} className={`nt-cq-row${isWorst ? " is-worst" : ""}`}>
+              <span className="mono" style={{fontSize: many ? 10.5 : 12, fontWeight:600, color:"var(--ink)"}}>{ch.name}</span>
+              <div className="nt-cq-bar" aria-hidden="true">
+                <div style={{width:(Math.max(0, Math.min(1, ch.score)) * 100) + "%", background:color}}/>
+              </div>
+              <span style={{fontSize: many ? 10 : 11, color: flagged ? color : "var(--ink-3)", whiteSpace:"nowrap"}}>{label}</span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
 window.LiveMonitor = function LiveMonitor({frame, t, lang, channels, animated, accent, demo}) {
   // A2: use device channels + raw WS buffer when stream is connected
   const hasRawData = !!(frame.rawBuffer && frame.rawBuffer.length > 0);
@@ -424,6 +502,11 @@ window.LiveMonitor = function LiveMonitor({frame, t, lang, channels, animated, a
 
       {/* RIGHT — risk + recommendation + sqi + history */}
       <div className="nt-live-side">
+        {/* Per-channel quality: indicator only in Study 1 condition B, + guidance in G */}
+        {hasRawData && (
+          <window.ChannelQualityPanel quality={frame.channelQuality || null} t={t} mode={NT_STUDY_CONDITION === "B" ? "B" : "G"}/>
+        )}
+
         {/* Risk gauge */}
         <div className="panel" style={{padding:18}}>
           <div style={{display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:14}}>

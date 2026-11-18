@@ -9,15 +9,20 @@
     return Math.max(low, Math.min(high, value));
   }
 
+  const BACKEND_PORT = "8501";
+
+  // When the backend itself serves the page (localhost or 127.0.0.1 on :8501), call it on
+  // the same origin. Hard-coding 127.0.0.1 made http://localhost:8501 cross-origin and the
+  // login failed with CORS. A saved value equal to the old default is treated as stale.
   function getApiBase() {
     try {
       if (window.API_BASE_URL !== undefined) return window.API_BASE_URL;
+      const isLocal = location.hostname === "127.0.0.1" || location.hostname === "localhost";
+      const servedByBackend = isLocal && String(location.port) === BACKEND_PORT;
       const saved = localStorage.getItem(API_KEY);
-      if (saved !== null) return saved;
-      if (location.hostname === "127.0.0.1" || location.hostname === "localhost") {
-        return DEFAULT_API_BASE;
-      }
-      return "";
+      if (saved !== null && !(servedByBackend && saved === DEFAULT_API_BASE)) return saved;
+      if (servedByBackend) return "";
+      return isLocal ? DEFAULT_API_BASE : "";
     } catch (e) {
       return DEFAULT_API_BASE;
     }
